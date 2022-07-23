@@ -2,7 +2,7 @@ import json
 
 from dataclasses import dataclass, asdict
 from functools import lru_cache
-from typing import List, Optional
+from typing import List
 
 
 @dataclass
@@ -73,19 +73,20 @@ class StatusUpdate:
 
 class Config:
     TEAMS = [
-        Team("SDK Team 1"),
-        Team("Frontend Team 1"),
-        Team("Backend Team 1")
+        Team("Fullstack Team"),
+        Team("SDK Team"),
+        Team("Frontend Team"),
+        Team("Backend Team")
     ]
 
     PROJECTS = [
-        Project("Motion"),
-        Project("NFC"),
-        Project("Applicant Fraud")
+        Project("Alpha Project"),
+        Project("X-LAB Release"),
+        Project("SDK Release 2022")
     ]
 
     STATUS_UPDATE_EMOJIS = [
-        StatusUpdateEmoji("🪪", ["Identification Card", "Document Type"]),
+        StatusUpdateEmoji("🪪", ["Identification Card", "Document"]),
         StatusUpdateEmoji("🚀", ["Rocket", "Launch"]),
         StatusUpdateEmoji("⚖️", ["Balance Scale", "Decision"]),
         StatusUpdateEmoji("🎆️", ["Fireworks"]),
