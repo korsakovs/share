@@ -1,5 +1,3 @@
-# import pprint  # Delete me
-
 import os
 import logging
 
@@ -9,7 +7,7 @@ from slack_bolt.workflows.step import WorkflowStep, Configure, Update, Complete,
 from slack_sdk import WebClient
 from slack_sdk.web import SlackResponse
 
-from slackbot.config import StatusUpdate
+from slackbot.dao import dao
 from slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, home_page_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_EMOJI_ACTION_ID, STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
@@ -66,6 +64,7 @@ def share_status_update_handler(ack, body, logger):
 def handle_view_events(ack, body, logger):
     ack()
     status_update = retrieve_status_update_from_view(body["view"]["state"])
+    dao.insert_status_update(status_update)
 
     try:
         app.client.views_open(
@@ -79,7 +78,7 @@ def handle_view_events(ack, body, logger):
 @app.action("status_update_preview_block_edit_action")
 def share_status_update_preview_edit_event(ack, body, logger):
     ack()
-    status_update = StatusUpdate.from_json(body["view"]["private_metadata"])
+    status_update = dao.read_status_update(body["view"]["private_metadata"])
 
     try:
         app.client.views_update(
