@@ -2,24 +2,7 @@ import uuid
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, List, Optional
-
-JSON_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
-def _parse_datetime(value: Any) -> Optional[datetime]:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.strptime(value, JSON_DATE_FORMAT)
-    except Exception:
-        raise ValueError(f"Can not parse datetime {value}") from None
-
-
-def _datetime_to_str(d: datetime) -> str:
-    return d.strftime(JSON_DATE_FORMAT)
+from typing import List
 
 
 @dataclass
