@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
-from sqlalchemy import create_engine, or_
+from sqlalchemy import create_engine, or_, false
 from sqlalchemy import inspect
 from sqlalchemy import Boolean
 from sqlalchemy import Column
@@ -201,7 +201,7 @@ class SQLAlchemyDao(Dao, ABC):
     def read_status_updates(self, created_after: datetime = None, created_before: datetime = None,
                             from_teams: List[str] = None, from_projects: List[str] = None,
                             with_types: List[str] = None) -> List[StatusUpdate]:
-        result = self._session.query(StatusUpdate).filter(not StatusUpdate.deleted)
+        result = self._session.query(StatusUpdate).filter(StatusUpdate.deleted == false())
 
         if created_after:
             result = result.filter(StatusUpdate.created_at >= created_after)
@@ -228,7 +228,7 @@ class SQLAlchemyDao(Dao, ABC):
         return self._session.get(Team, uuid)
 
     def read_teams(self) -> List[Team]:
-        return self._session.query(Team).all()
+        return self._session.query(Team).filter(Team.deleted == false()).all()
 
     def insert_project(self, project: Project):
         self._add_and_commit(project)
@@ -237,7 +237,7 @@ class SQLAlchemyDao(Dao, ABC):
         return self._session.get(Project, uuid)
 
     def read_projects(self) -> List[Project]:
-        return self._session.query(Project).all()
+        return self._session.query(Project).filter(Project.deleted == false()).all()
 
     def insert_status_update_type(self, status_update_type: StatusUpdateType):
         self._add_and_commit(status_update_type)
@@ -246,7 +246,7 @@ class SQLAlchemyDao(Dao, ABC):
         return self._session.get(StatusUpdateType, uuid)
 
     def read_status_update_types(self) -> List[StatusUpdateType]:
-        return self._session.query(StatusUpdateType).all()
+        return self._session.query(StatusUpdateType).filter(StatusUpdateType.deleted == false()).all()
 
     def insert_status_update_emoji(self, status_update_emoji: StatusUpdateEmoji):
         self._add_and_commit(status_update_emoji)
@@ -255,7 +255,7 @@ class SQLAlchemyDao(Dao, ABC):
         return self._session.get(StatusUpdateEmoji, uuid)
 
     def read_status_update_emojis(self) -> List[StatusUpdateEmoji]:
-        return self._session.query(StatusUpdateEmoji).all()
+        return self._session.query(StatusUpdateEmoji).filter(StatusUpdateEmoji.deleted == false()).all()
 
 
 class SQLiteInMemoryDao(SQLAlchemyDao):
