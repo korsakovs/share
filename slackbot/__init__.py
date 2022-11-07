@@ -90,6 +90,13 @@ def share_status_update_preview_edit_event(ack, body, logger):
         logger.error(f"Error publishing home tab: {e}")
 
 
+@app.view("status_update_preview_approved_callback")
+def handle_view_events(ack, body, logger):
+    ack()
+    status_update_uuid = body["view"]["private_metadata"]
+    dao.publish_status_update(status_update_uuid)
+
+
 def workflow_step_edit_execute(step: dict, client: WebClient, complete: Complete, fail: Fail):
     complete(
         outputs={

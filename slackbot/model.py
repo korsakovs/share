@@ -9,14 +9,14 @@ from typing import List
 class Team:
     name: str
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
-    active: bool = True
+    deleted: bool = False
 
 
 @dataclass
 class Project:
     name: str
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
-    active: bool = True
+    deleted: bool = False
 
 
 @dataclass
@@ -24,7 +24,7 @@ class StatusUpdateType:
     name: str
     emoji: str
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
-    active: bool = True
+    deleted: bool = False
 
 
 @dataclass
@@ -32,7 +32,7 @@ class StatusUpdateEmoji:
     emoji: str
     meaning: str
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
-    active: bool = True
+    deleted: bool = False
 
 
 @dataclass
@@ -42,6 +42,7 @@ class StatusUpdate:
 
     text: str
     published: bool = False
+    deleted: bool = False
 
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.utcnow)

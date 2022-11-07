@@ -23,7 +23,7 @@ def status_update_type_block(status_update_groups: List[StatusUpdateType],
             placeholder=select_text,
             options=[
                 type_as_option(status_update_group)
-                for status_update_group in status_update_groups if status_update_group.active
+                for status_update_group in status_update_groups if not status_update_group.deleted
             ],
             initial_option=selected_value,
             focus_on_load=False
@@ -49,7 +49,7 @@ def status_update_emoji_block(status_update_emojis: List[StatusUpdateEmoji],
             placeholder=select_text,
             options=[Option(value="<noemoji>", text="no emoji :("), *[
                 emoji_as_option(status_update_emoji)
-                for status_update_emoji in status_update_emojis if status_update_emoji.active
+                for status_update_emoji in status_update_emojis if not status_update_emoji.deleted
             ]],
             initial_option=selected_value
         )
@@ -72,7 +72,8 @@ def status_update_teams_block(status_update_teams: List[Team], label: str = "Pic
             action_id=action_id,
             placeholder=select_text,
             options=[
-                team_as_option(team) for team in sorted(status_update_teams, key=lambda team: team.name) if team.active
+                team_as_option(team) for team in sorted(status_update_teams, key=lambda team: team.name)
+                if not team.deleted
             ],
             initial_options=selected_options
         )
@@ -97,7 +98,7 @@ def status_update_projects_block(status_update_projects: List[Project],
             placeholder=select_text,
             options=[
                 project_as_option(project)
-                for project in sorted(status_update_projects, key=lambda project: project.name) if project.active
+                for project in sorted(status_update_projects, key=lambda project: project.name) if not project.deleted
             ],
             initial_options=selected_options
         )

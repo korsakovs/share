@@ -24,13 +24,13 @@ from slackbot.config import INITIAL_TEAM_NAMES, INITIAL_PROJECT_NAMES, INITIAL_S
 class Dao(ABC):
     @property
     @abstractmethod
-    def cold_start(self) -> bool: ...
+    def first_start(self) -> bool: ...
 
     @abstractmethod
-    def insert_status_update(self, status_update: StatusUpdate, replace: bool = False): ...
+    def insert_status_update(self, status_update: StatusUpdate): ...
 
-    def replace_status_update(self, status_update: StatusUpdate):
-        self.insert_status_update(status_update, replace=True)
+    @abstractmethod
+    def publish_status_update(self, uuid: str) -> bool: ...
 
     @abstractmethod
     def read_status_update(self, uuid: str) -> Optional[StatusUpdate]: ...
@@ -88,7 +88,7 @@ class SQLAlchemyDao(Dao, ABC):
     def _create_engine(self) -> Engine: ...
 
     @property
-    def cold_start(self) -> bool:
+    def first_start(self) -> bool:
         return self._cold_start
 
     def __init__(self):
@@ -102,7 +102,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("name", String(256), nullable=False),
-            Column("active", Boolean, nullable=False),
+            Column("deleted", Boolean, nullable=False),
         )
 
         self._projects_table = Table(
@@ -110,7 +110,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("name", String(256), nullable=False),
-            Column("active", Boolean, nullable=False),
+            Column("deleted", Boolean, nullable=False),
         )
 
         self._status_update_types_table = Table(
@@ -119,7 +119,7 @@ class SQLAlchemyDao(Dao, ABC):
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("name", String(256), nullable=False),
             Column("emoji", String(256)),
-            Column("active", Boolean, nullable=False),
+            Column("deleted", Boolean, nullable=False),
         )
 
         self._status_update_emojis_table = Table(
@@ -128,7 +128,7 @@ class SQLAlchemyDao(Dao, ABC):
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("emoji", String(256), nullable=False),
             Column("meaning", String(256), nullable=False),
-            Column("active", Boolean, nullable=False),
+            Column("deleted", Boolean, nullable=False),
         )
 
         self._status_update_table = Table(
@@ -136,6 +136,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("published", Boolean, nullable=False),
+            Column("deleted", Boolean, nullable=False),
             Column("text", Text, nullable=False),
             Column("created_at", DateTime, nullable=False),
             Column("status_update_type_uuid", String(256), ForeignKey(f"{self._STATUS_UPDATE_TYPES_TABLE}.uuid")),
@@ -182,8 +183,17 @@ class SQLAlchemyDao(Dao, ABC):
         self._session.add(obj)
         self._session.commit()
 
-    def insert_status_update(self, status_update: StatusUpdate, replace: bool = False):
+    def insert_status_update(self, status_update: StatusUpdate):
         self._add_and_commit(status_update)
+
+    def publish_status_update(self, uuid: str) -> bool:
+        status_update = self.read_status_update(uuid)
+        if status_update:
+            status_update.published = True
+            self._session.commit()
+            return True
+        else:
+            return False
 
     def read_status_update(self, uuid: str) -> Optional[StatusUpdate]:
         return self._session.get(StatusUpdate, uuid)
@@ -191,7 +201,7 @@ class SQLAlchemyDao(Dao, ABC):
     def read_status_updates(self, created_after: datetime = None, created_before: datetime = None,
                             from_teams: List[str] = None, from_projects: List[str] = None,
                             with_types: List[str] = None) -> List[StatusUpdate]:
-        result = self._session.query(StatusUpdate)
+        result = self._session.query(StatusUpdate).filter(not StatusUpdate.deleted)
 
         if created_after:
             result = result.filter(StatusUpdate.created_at >= created_after)
@@ -262,7 +272,7 @@ class SQLiteDao(SQLAlchemyDao):
 
 dao = SQLiteDao()
 
-if dao.cold_start:
+if dao.first_start:
     for team_name in INITIAL_TEAM_NAMES:
         dao.insert_team(Team(team_name))
 
