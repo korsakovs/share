@@ -2,11 +2,11 @@ from slack_bolt import App
 from slack_sdk.models.blocks import DividerBlock, SectionBlock, ActionsBlock, ButtonElement
 from slack_sdk.models.views import View
 
-from slackbot.blocks import status_update_type_block, status_update_emoji_block, status_update_teams_block, \
+from updateme.slackbot.blocks import status_update_type_block, status_update_emoji_block, status_update_teams_block, \
     status_update_projects_block, status_update_text_block, status_update_preview_block, \
     status_update_preview_back_to_editing_block
-from slackbot.dao import dao
-from model import StatusUpdate
+from updateme.core import dao
+from updateme.core.model import StatusUpdate
 
 STATUS_UPDATE_TYPE_BLOCK = "status_update_type_block"
 STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID = "status_update_modal__status_update_type_action_id"

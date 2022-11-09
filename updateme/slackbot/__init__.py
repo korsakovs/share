@@ -7,14 +7,14 @@ from slack_bolt.workflows.step import WorkflowStep, Configure, Update, Complete,
 from slack_sdk import WebClient
 from slack_sdk.web import SlackResponse
 
-from slackbot.dao import dao
-from slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
+from updateme.core import dao
+from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, home_page_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_EMOJI_ACTION_ID, STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID
 
 logging.basicConfig(level=logging.DEBUG)
-app = App(token=os.environ["SLACK_BOT_TOKEN"])
+app = App(token=os.getenv("SLACK_BOT_TOKEN", "<wrong_token>"))
 
 
 @app.action(STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID)

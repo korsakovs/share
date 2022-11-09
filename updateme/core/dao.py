@@ -1,3 +1,5 @@
+import os
+import sys
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
@@ -16,8 +18,8 @@ from sqlalchemy.orm import registry, sessionmaker
 from sqlalchemy.orm import relationship
 from typing import List, Optional
 
-from model import Project, StatusUpdate, StatusUpdateType, Team, StatusUpdateEmoji
-from slackbot.config import INITIAL_TEAM_NAMES, INITIAL_PROJECT_NAMES, INITIAL_STATUS_UPDATE_EMOJIS, \
+from updateme.core.model import Project, StatusUpdate, StatusUpdateType, Team, StatusUpdateEmoji
+from updateme.core.config import INITIAL_TEAM_NAMES, INITIAL_PROJECT_NAMES, INITIAL_STATUS_UPDATE_EMOJIS, \
     INITIAL_STATUS_UPDATE_TYPES
 
 
@@ -265,9 +267,21 @@ class SQLiteInMemoryDao(SQLAlchemyDao):
 
 class SQLiteDao(SQLAlchemyDao):
     _DB_FILENAME = "update_me.db"
+    _DB_PYTEST_FILENAME = "pytest_update_me.db"
+
+    @property
+    def db_folder(self):
+        return os.path.join(os.path.dirname(__file__), "..", "..", "db")
+
+    @property
+    def db_file(self):
+        filename = self._DB_FILENAME if "pytest" not in sys.modules else self._DB_PYTEST_FILENAME
+        return os.path.join(self.db_folder, filename)
 
     def _create_engine(self) -> Engine:
-        return create_engine(f"sqlite:///{self._DB_FILENAME}", echo=False)
+        if not os.path.isdir(self.db_folder):
+            os.mkdir(self.db_folder)
+        return create_engine(f"sqlite:///{self.db_file}", echo=False)
 
 
 dao = SQLiteDao()

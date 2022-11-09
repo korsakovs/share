@@ -2,7 +2,7 @@ from typing import List
 from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Option, StaticSelectElement, \
     PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject
 
-from slackbot.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate
+from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate
 
 
 def status_update_type_block(status_update_groups: List[StatusUpdateType],
