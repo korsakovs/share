@@ -26,8 +26,11 @@ INITIAL_STATUS_UPDATE_EMOJIS = [
 
 
 INITIAL_STATUS_UPDATE_TYPES = [
-    ("Highlight", "🙂"),
-    ("Lowlight", "🙃"),
-    ("Risk", "❓"),
-    ("Focus", "🎯")
+    ("Good news", "🙂"),
+    ("Bad news", "🙃"),
+    ("Risk", "⚠️"),
+    ("Delay", "⏳️"),
+    ("Announce", "📢"),
+    ("Release", "🎉"),
+    ("Launch", "🚀"),
 ]
