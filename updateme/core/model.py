@@ -2,7 +2,13 @@ import uuid
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
+
+
+class StatusUpdateSource(Enum):
+    SLACK_DIALOG = 1
+    SLACK_MESSAGE = 2
 
 
 @dataclass
@@ -36,14 +42,25 @@ class StatusUpdateEmoji:
 
 
 @dataclass
+class StatusUpdateImage:
+    url: str
+    filename: str
+    uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    title: str = None
+    description: str = None
+
+
+@dataclass
 class StatusUpdate:
     type: StatusUpdateType
     emoji: StatusUpdateEmoji
-
     text: str
+    source: StatusUpdateSource
+
     published: bool = False
     deleted: bool = False
 
+    rich_text: bool = False
     author_slack_user_id: Optional[str] = None
 
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -51,6 +68,7 @@ class StatusUpdate:
 
     teams: List[Team] = field(default_factory=list)
     projects: List[Project] = field(default_factory=list)
+    images: List[StatusUpdateImage] = field(default_factory=list)
 
 
 @dataclass

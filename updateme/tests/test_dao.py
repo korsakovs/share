@@ -4,7 +4,7 @@ import string
 from random import choices
 
 from updateme.core import dao
-from updateme.core.model import Project, Team, StatusUpdate
+from updateme.core.model import Project, Team, StatusUpdate, StatusUpdateSource
 
 
 @pytest.fixture
@@ -59,9 +59,13 @@ def test_team_insertion(non_existing_team):
 
 def test_status_update_insertion():
     status_update = StatusUpdate(
+        source=StatusUpdateSource.SLACK_DIALOG,
         emoji=dao.read_status_update_emojis()[0],
         text="Some Text",
         type=dao.read_status_update_types()[0]
     )
     dao.insert_status_update(status_update)
-    assert status_update.uuid in [su.uuid for su in dao.read_status_updates()]
+    assert status_update.uuid not in [su.uuid for su in dao.read_status_updates()]
+    assert status_update.uuid not in [su.uuid for su in dao.read_status_updates(published=True)]
+    assert status_update.uuid in [su.uuid for su in dao.read_status_updates(published=None)]
+    assert status_update.uuid in [su.uuid for su in dao.read_status_updates(published=False)]

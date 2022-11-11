@@ -8,6 +8,8 @@ from slack_sdk import WebClient
 from slack_sdk.web import SlackResponse
 
 from updateme.core import dao
+from updateme.core.model import StatusUpdateSource
+from updateme.slackbot.messages import status_update_preview_message, status_update_from_message
 from updateme.slackbot.utils import get_or_create_slack_user_preferences
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
@@ -138,7 +140,10 @@ def share_status_update_button_click_handler(ack, body, logger):
     try:
         app.client.views_open(
             trigger_id=body["trigger_id"],
-            view=status_update_dialog_view(state=dao.read_last_unpublished_status_update(body["user"]["id"])),
+            view=status_update_dialog_view(state=dao.read_last_unpublished_status_update(
+                author_slack_user_id=body["user"]["id"],
+                source=StatusUpdateSource.SLACK_DIALOG
+            )),
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -181,7 +186,17 @@ def status_update_preview_share_button_click_handler(ack, body, logger):
 
 
 @app.event("message")
-def handle_message_events(body, logger):
+def message_event_handler(body, logger):
+    status_update = status_update_from_message(body)
+    dao.insert_status_update(status_update)
+
+    app.client.chat_postMessage(
+        channel=body["event"]["channel"],
+        as_user=True,
+        blocks=status_update_preview_message(status_update)
+    )
+    # TODO: Delete original message (if possible) !! OR !! Update status update preview on original message update
+    # app.client.chat_delete()
     logger.info(body)
 
 

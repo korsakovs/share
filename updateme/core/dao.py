@@ -3,7 +3,7 @@ import sys
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
-from sqlalchemy import create_engine, or_, false, true, desc
+from sqlalchemy import create_engine, or_, false, true, desc, Enum
 from sqlalchemy import inspect
 from sqlalchemy import Boolean
 from sqlalchemy import Column
@@ -18,7 +18,8 @@ from sqlalchemy.orm import registry, sessionmaker
 from sqlalchemy.orm import relationship
 from typing import List, Optional
 
-from updateme.core.model import Project, StatusUpdate, StatusUpdateType, Team, StatusUpdateEmoji, SlackUserPreferences
+from updateme.core.model import Project, StatusUpdate, StatusUpdateType, Team, StatusUpdateEmoji, \
+    SlackUserPreferences, StatusUpdateImage, StatusUpdateSource
 from updateme.core.config import INITIAL_TEAM_NAMES, INITIAL_PROJECT_NAMES, INITIAL_STATUS_UPDATE_EMOJIS, \
     INITIAL_STATUS_UPDATE_TYPES
 
@@ -35,12 +36,13 @@ class Dao(ABC):
     def publish_status_update(self, uuid: str) -> bool: ...
 
     def read_last_unpublished_status_update(self, author_slack_user_id: str,
-                                            no_older_than: timedelta = timedelta(days=2)) \
-            -> Optional[StatusUpdate]:
+                                            no_older_than: timedelta = timedelta(days=2),
+                                            source: StatusUpdateSource = None) -> Optional[StatusUpdate]:
         updates = self.read_status_updates(
             created_after=datetime.utcnow() - no_older_than,
             author_slack_user_id=author_slack_user_id,
-            published=False
+            published=False,
+            source=source
         )
         if updates:
             return max(updates, key=lambda update: update.created_at)
@@ -52,8 +54,8 @@ class Dao(ABC):
     def read_status_updates(self, created_after: datetime = None, created_before: datetime = None,
                             from_teams: List[str] = None, from_projects: List[str] = None,
                             with_types: List[str] = None, published: Optional[bool] = True,
-                            deleted: Optional[bool] = False, author_slack_user_id: str = None) \
-        -> List[StatusUpdate]: ...
+                            deleted: Optional[bool] = False, author_slack_user_id: str = None,
+                            last_n: int = None, source: StatusUpdateSource = None) -> List[StatusUpdate]: ...
 
     @abstractmethod
     def insert_team(self, team: Team): ...
@@ -104,6 +106,7 @@ class SQLAlchemyDao(Dao, ABC):
     _PROJECTS_TABLE = "projects"
     _STATUS_UPDATE_TYPES_TABLE = "status_update_types"
     _STATUS_UPDATE_EMOJIS_TABLE = "status_update_emojis"
+    _STATUS_UPDATE_IMAGES_TABLE = "status_update_images"
     _SLACK_USER_PREFERENCES_TABLE = "slack_user_preferences"
 
     @abstractmethod
@@ -157,9 +160,11 @@ class SQLAlchemyDao(Dao, ABC):
             self._STATUS_UPDATES_TABLE,
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
+            Column("source", Enum(StatusUpdateSource), nullable=False),
             Column("published", Boolean, nullable=False),
             Column("deleted", Boolean, nullable=False),
             Column("text", Text, nullable=False),
+            Column("rich_text", Boolean, nullable=False),
             Column("author_slack_user_id", String(256), nullable=True),
             Column("created_at", DateTime, nullable=False),
             Column("status_update_type_uuid", String(256), ForeignKey(f"{self._STATUS_UPDATE_TYPES_TABLE}.uuid")),
@@ -191,10 +196,22 @@ class SQLAlchemyDao(Dao, ABC):
                    nullable=True),
         )
 
+        self._status_update_images_table = Table(
+            self._STATUS_UPDATE_IMAGES_TABLE,
+            self._metadata_obj,
+            Column("uuid", String(256), primary_key=True, nullable=False),
+            Column("status_update_uuid", String(256), ForeignKey(f"{self._STATUS_UPDATES_TABLE}.uuid"), nullable=False),
+            Column("url", String(1024), nullable=False),
+            Column("filename", String(1024), nullable=False),
+            Column("title", String(1024), nullable=True),
+            Column("description", String(1024), nullable=True),
+        )
+
         self._mapper_registry.map_imperatively(Team, self._teams_table)
         self._mapper_registry.map_imperatively(Project, self._projects_table)
         self._mapper_registry.map_imperatively(StatusUpdateType, self._status_update_types_table)
         self._mapper_registry.map_imperatively(StatusUpdateEmoji, self._status_update_emojis_table)
+        self._mapper_registry.map_imperatively(StatusUpdateImage, self._status_update_images_table)
 
         self._mapper_registry.map_imperatively(
             StatusUpdate,
@@ -205,7 +222,8 @@ class SQLAlchemyDao(Dao, ABC):
                 "projects": relationship(Project, secondary=self._status_update_projects_association_table,
                                          order_by=self._projects_table.c.name),
                 "teams": relationship(Team, secondary=self._status_update_teams_association_table,
-                                      order_by=self._teams_table.c.name)
+                                      order_by=self._teams_table.c.name),
+                "images": relationship(StatusUpdateImage)
             }
         )
 
@@ -245,8 +263,8 @@ class SQLAlchemyDao(Dao, ABC):
     def read_status_updates(self, created_after: datetime = None, created_before: datetime = None,
                             from_teams: List[str] = None, from_projects: List[str] = None,
                             with_types: List[str] = None, published: Optional[bool] = True,
-                            deleted: Optional[bool] = False, author_slack_user_id: str = None, last_n: int = None) \
-            -> List[StatusUpdate]:
+                            deleted: Optional[bool] = False, author_slack_user_id: str = None,
+                            last_n: int = None, source: StatusUpdateSource = None) -> List[StatusUpdate]:
         result = self._session.query(StatusUpdate)
 
         if created_after:
@@ -273,6 +291,9 @@ class SQLAlchemyDao(Dao, ABC):
 
         if author_slack_user_id is not None:
             result = result.filter(StatusUpdate.author_slack_user_id == author_slack_user_id)
+
+        if source is not None:
+            result = result.filter(StatusUpdate.source == source)
 
         if last_n is not None:
             result = result.order_by(desc(StatusUpdate.created_at)).limit(last_n)
