@@ -13,6 +13,6 @@ def get_or_create_slack_user_preferences(user_id: str) -> SlackUserPreferences:
     user_preferences = dao.read_slack_user_preferences(user_id)
     if user_preferences is None:
         user_preferences = SlackUserPreferences(user_id, "company_updates")
-        dao.insert_status_update(user_preferences)
+        dao.insert_slack_user_preferences(user_preferences)
 
     return user_preferences
