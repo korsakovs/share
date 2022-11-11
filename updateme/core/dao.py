@@ -231,12 +231,12 @@ class SQLAlchemyDao(Dao, ABC):
         if from_teams:
             result = result.join(self._status_update_teams_association_table)
             result = result.join(Team)
-            result = result.filter(or_(Team.name == team for team in from_teams))
+            result = result.filter(or_(Team.uuid == team for team in from_teams))
 
         if from_projects:
             result = result.join(self._status_update_projects_association_table)
             result = result.join(Project)
-            result = result.filter(or_(Project.name == project for project in from_projects))
+            result = result.filter(or_(Project.uuid == project for project in from_projects))
 
         if deleted is not None:
             result = result.filter(StatusUpdate.deleted == (true() if deleted else false()))
