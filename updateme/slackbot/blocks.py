@@ -5,6 +5,28 @@ from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Opti
 from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate
 
 
+def home_page_actions_block(selected: str = "my_updates") -> ActionsBlock:
+    return ActionsBlock(
+        elements=[
+            ButtonElement(
+                text="Share a status update",
+                style="danger",
+                action_id="share_status_update_button_clicked"
+            ),
+            ButtonElement(
+                text="My Updates",
+                style="primary" if selected == "my_updates" else None,
+                action_id="home_page_my_updates_button_clicked"
+            ),
+            ButtonElement(
+                text="Company Updates",
+                style="primary" if selected == "company_updates" else None,
+                action_id="home_page_company_updates_button_clicked"
+            ),
+        ]
+    )
+
+
 def status_update_type_block(status_update_groups: List[StatusUpdateType],
                              label: str = "Status Update Type", select_text="Select status update group",
                              selected_value: StatusUpdateType = None, block_id: str = None,
@@ -149,3 +171,32 @@ def status_update_preview_back_to_editing_block() -> ActionsBlock:
             )
         ]
     )
+
+
+def status_update_list_blocks(status_updates: List[StatusUpdate]) -> List[SectionBlock]:
+    result = []
+    for status_update in status_updates:
+        title = ""
+        if status_update.type:
+            title += status_update.type.emoji + f" *{status_update.type.name}*"
+        if status_update.projects:
+            title += " @ " + ", ".join(project.name for project in status_update.projects)
+
+        text = " • " + status_update.text
+
+        result.append(SectionBlock(
+            text=TextObject(
+                type="mrkdwn",
+                text=title,
+                # emoji=True
+            )
+        ))
+
+        result.append(SectionBlock(
+            text=TextObject(
+                type="plain_text",
+                text=text,
+                emoji=True
+            )
+        ))
+    return result

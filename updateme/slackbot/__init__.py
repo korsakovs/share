@@ -9,9 +9,10 @@ from slack_sdk.web import SlackResponse
 
 from updateme.core import dao
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
-    share_status_update_preview_view, home_page_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
+    share_status_update_preview_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_EMOJI_ACTION_ID, STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
-    STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID, retrieve_private_metadata_from_view
+    STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID, retrieve_private_metadata_from_view, \
+    home_page_my_updates_view, home_page_company_updates_view
 
 logging.basicConfig(level=logging.DEBUG)
 app = App(token=os.getenv("SLACK_BOT_TOKEN", "<wrong_token>"))
@@ -38,11 +39,37 @@ def status_update_modal_status_projects_action_handler(ack):
 
 
 @app.event("app_home_opened")
-def app_home_open_handler(client: WebClient, event, logger):
+def home_page_open_handler(client: WebClient, event, logger):
     try:
         client.views_publish(
             user_id=event["user"],
-            view=home_page_view()
+            view=home_page_my_updates_view(event["user"])
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("home_page_my_updates_button_clicked")
+def home_page_my_updates_button_click_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    try:
+        app.client.views_publish(
+            user_id=body["user"]["id"],
+            view=home_page_my_updates_view(body["user"]["id"])
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("home_page_company_updates_button_clicked")
+def home_page_company_updates_button_click_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    try:
+        app.client.views_publish(
+            user_id=body["user"]["id"],
+            view=home_page_company_updates_view()
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -93,8 +120,7 @@ def status_update_preview_back_to_editing_click_handler(ack, body, logger):
 @app.view("status_update_preview_share_button_clicked")
 def status_update_preview_share_button_click_handler(ack, body, logger):
     ack()
-    status_update_uuid = body["view"]["private_metadata"]
-    dao.publish_status_update(status_update_uuid)
+    dao.publish_status_update(retrieve_private_metadata_from_view(body).status_update_uuid)
 
 
 def workflow_step_edit_execute(step: dict, client: WebClient, complete: Complete, fail: Fail):

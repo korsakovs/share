@@ -1,11 +1,11 @@
 import json
 
-from slack_sdk.models.blocks import DividerBlock, ActionsBlock, ButtonElement
+from slack_sdk.models.blocks import DividerBlock
 from slack_sdk.models.views import View
 
 from updateme.slackbot.blocks import status_update_type_block, status_update_emoji_block, status_update_teams_block, \
     status_update_projects_block, status_update_text_block, status_update_preview_block, \
-    status_update_preview_back_to_editing_block
+    status_update_preview_back_to_editing_block, status_update_list_blocks, home_page_actions_block
 from updateme.core import dao
 from updateme.core.model import StatusUpdate
 
@@ -145,28 +145,25 @@ def share_status_update_preview_view(update: StatusUpdate) -> View:
     )
 
 
-def home_page_view():
+def home_page_my_updates_view(author_slack_user_id: str):
     return View(
         type="home",
         title="Welcome to Chirik Bot!",
         blocks=[
-            ActionsBlock(
-                elements=[
-                    ButtonElement(
-                        text="Share a status update",
-                        style="primary",
-                        action_id="share_status_update_button_clicked"
-                    ),
-                    ButtonElement(
-                        text="My Updates",
-                        action_id="home_page_my_updates_action_id"
-                    ),
-                    ButtonElement(
-                        text="Company Updates",
-                        action_id="home_page_company_updates_action_id"
-                    ),
-                ]
-            ),
+            home_page_actions_block(),
             DividerBlock(),
+            *status_update_list_blocks(dao.read_status_updates(author_slack_user_id=author_slack_user_id, last_n=100))
+        ]
+    )
+
+
+def home_page_company_updates_view():
+    return View(
+        type="home",
+        title="Welcome to Chirik Bot!",
+        blocks=[
+            home_page_actions_block(selected="company_updates"),
+            DividerBlock(),
+            *status_update_list_blocks(dao.read_status_updates(last_n=100))
         ]
     )

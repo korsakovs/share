@@ -3,7 +3,7 @@ import sys
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
-from sqlalchemy import create_engine, or_, false, true
+from sqlalchemy import create_engine, or_, false, true, desc
 from sqlalchemy import inspect
 from sqlalchemy import Boolean
 from sqlalchemy import Column
@@ -218,7 +218,7 @@ class SQLAlchemyDao(Dao, ABC):
     def read_status_updates(self, created_after: datetime = None, created_before: datetime = None,
                             from_teams: List[str] = None, from_projects: List[str] = None,
                             with_types: List[str] = None, published: Optional[bool] = True,
-                            deleted: Optional[bool] = False, author_slack_user_id: str = None) \
+                            deleted: Optional[bool] = False, author_slack_user_id: str = None, last_n: int = None) \
             -> List[StatusUpdate]:
         result = self._session.query(StatusUpdate)
 
@@ -246,6 +246,9 @@ class SQLAlchemyDao(Dao, ABC):
 
         if author_slack_user_id is not None:
             result = result.filter(StatusUpdate.author_slack_user_id == author_slack_user_id)
+
+        if last_n is not None:
+            result = result.order_by(desc(StatusUpdate.created_at)).limit(last_n)
 
         return result.distinct().all()
 
