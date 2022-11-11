@@ -1,5 +1,6 @@
-from slack_bolt import App
-from slack_sdk.models.blocks import DividerBlock, SectionBlock, ActionsBlock, ButtonElement
+import json
+
+from slack_sdk.models.blocks import DividerBlock, ActionsBlock, ButtonElement
 from slack_sdk.models.views import View
 
 from updateme.slackbot.blocks import status_update_type_block, status_update_emoji_block, status_update_teams_block, \
@@ -24,9 +25,36 @@ STATUS_UPDATE_TEXT_BLOCK = "status_update_text_block"
 STATUS_UPDATE_MODAL_STATUS_UPDATE_TEXT_ACTION_ID = "status_update_modal__status_update_text_action_id"
 
 
-def retrieve_status_update_from_view(view_state) -> StatusUpdate:
-    values = view_state["values"]
-    print(values)
+class PrivateMetadata:
+    def __init__(self, status_update_uuid: str = None):
+        self.status_update_uuid = status_update_uuid
+
+    def __str__(self):
+        return self.as_str()
+
+    def as_str(self):
+        return json.dumps({
+            "status_update_uuid": self.status_update_uuid
+        })
+
+    @classmethod
+    def from_str(cls, s: str):
+        if not s:
+            return PrivateMetadata()
+        d = json.loads(s)
+        return PrivateMetadata(
+            status_update_uuid=d.get("status_update_uuid")
+        )
+
+
+def retrieve_private_metadata_from_view(body) -> PrivateMetadata:
+    return PrivateMetadata.from_str(body["view"]["private_metadata"])
+
+
+def retrieve_status_update_from_view(body) -> StatusUpdate:
+    values = body["view"]["state"]["values"]
+    user_id = body["user"]["id"]
+    private_metadata = retrieve_private_metadata_from_view(body)
 
     selected_type = values[STATUS_UPDATE_TYPE_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID][
         "selected_option"]
@@ -50,23 +78,29 @@ def retrieve_status_update_from_view(view_state) -> StatusUpdate:
     if selected_projects is not None:
         projects = [dao.read_project(selected_project["value"]) for selected_project in selected_projects]
 
+    kwargs = dict()
+    if private_metadata and private_metadata.status_update_uuid:
+        kwargs["uuid"] = private_metadata.status_update_uuid
+
     return StatusUpdate(
         type=selected_type,
         emoji=selected_emoji,
         teams=teams,
         projects=projects,
-        text=values[STATUS_UPDATE_TEXT_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TEXT_ACTION_ID]["value"]
+        text=values[STATUS_UPDATE_TEXT_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TEXT_ACTION_ID]["value"],
+        author_slack_user_id=user_id,
+        **kwargs
     )
 
 
-def status_update_dialog_view(callback_id: str = "status_update_shared_callback", state: StatusUpdate = None) \
-        -> View:
+def status_update_dialog_view(state: StatusUpdate = None) -> View:
     return View(
         type="modal",
-        callback_id=callback_id,
+        callback_id="status_update_preview_button_clicked",
         title="Share Status Update",
         submit="Preview",
         close="Cancel",
+        private_metadata=str(PrivateMetadata(status_update_uuid=None if state is None else state.uuid)),
         blocks=[
             DividerBlock(),
             status_update_type_block(dao.read_status_update_types(),
@@ -94,15 +128,14 @@ def status_update_dialog_view(callback_id: str = "status_update_shared_callback"
     )
 
 
-def share_status_update_preview_view(update: StatusUpdate,
-                                     callback_id: str = "status_update_preview_approved_callback") -> View:
+def share_status_update_preview_view(update: StatusUpdate) -> View:
     return View(
         type="modal",
-        callback_id=callback_id,
+        callback_id="status_update_preview_share_button_clicked",
         title="Preview Status Update",
         submit="Share",
         close="Cancel",
-        private_metadata=update.uuid,
+        private_metadata=str(PrivateMetadata(status_update_uuid=update.uuid)),
         blocks=[
             DividerBlock(),
             status_update_preview_block(update),
@@ -122,7 +155,7 @@ def home_page_view():
                     ButtonElement(
                         text="Share a status update",
                         style="primary",
-                        action_id="share_status_update"
+                        action_id="share_status_update_button_clicked"
                     ),
                     ButtonElement(
                         text="My Updates",

@@ -11,7 +11,7 @@ from updateme.core import dao
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, home_page_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_EMOJI_ACTION_ID, STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
-    STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID
+    STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID, retrieve_private_metadata_from_view
 
 logging.basicConfig(level=logging.DEBUG)
 app = App(token=os.getenv("SLACK_BOT_TOKEN", "<wrong_token>"))
@@ -38,7 +38,7 @@ def status_update_modal_status_projects_action_handler(ack):
 
 
 @app.event("app_home_opened")
-def handle_app_home_opened_events(client: WebClient, event, logger):
+def app_home_open_handler(client: WebClient, event, logger):
     try:
         client.views_publish(
             user_id=event["user"],
@@ -48,22 +48,22 @@ def handle_app_home_opened_events(client: WebClient, event, logger):
         logger.error(f"Error publishing home tab: {e}")
 
 
-@app.action("share_status_update")
-def share_status_update_handler(ack, body, logger):
+@app.action("share_status_update_button_clicked")
+def share_status_update_button_click_handler(ack, body, logger):
     ack()
     try:
         app.client.views_open(
             trigger_id=body["trigger_id"],
-            view=status_update_dialog_view()
+            view=status_update_dialog_view(state=dao.read_last_unpublished_status_update(body["user"]["id"])),
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
 
 
-@app.view("status_update_shared_callback")
-def handle_view_events(ack, body, logger):
+@app.view("status_update_preview_button_clicked")
+def status_update_preview_button_click_handler(ack, body, logger):
     ack()
-    status_update = retrieve_status_update_from_view(body["view"]["state"])
+    status_update = retrieve_status_update_from_view(body)
     dao.insert_status_update(status_update)
 
     try:
@@ -75,10 +75,10 @@ def handle_view_events(ack, body, logger):
         logger.error(f"Error publishing home tab: {e}")
 
 
-@app.action("status_update_preview_block_edit_action")
-def share_status_update_preview_edit_event(ack, body, logger):
+@app.action("status_update_preview_back_to_editing_clicked")
+def status_update_preview_back_to_editing_click_handler(ack, body, logger):
     ack()
-    status_update = dao.read_status_update(body["view"]["private_metadata"])
+    status_update = dao.read_status_update(retrieve_private_metadata_from_view(body).status_update_uuid)
 
     try:
         app.client.views_update(
@@ -90,8 +90,8 @@ def share_status_update_preview_edit_event(ack, body, logger):
         logger.error(f"Error publishing home tab: {e}")
 
 
-@app.view("status_update_preview_approved_callback")
-def handle_view_events(ack, body, logger):
+@app.view("status_update_preview_share_button_clicked")
+def status_update_preview_share_button_click_handler(ack, body, logger):
     ack()
     status_update_uuid = body["view"]["private_metadata"]
     dao.publish_status_update(status_update_uuid)

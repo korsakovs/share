@@ -120,7 +120,7 @@ def status_update_text_block(label: str = "Status Update", initial_value: str = 
     )
 
 
-def status_update_preview_block(status_update: StatusUpdate, action_id="status_update_preview_block_edit_action") \
+def status_update_preview_block(status_update: StatusUpdate) \
         -> SectionBlock:
     text = " • "
     if status_update.emoji:
@@ -145,7 +145,7 @@ def status_update_preview_back_to_editing_block() -> ActionsBlock:
         elements=[
             ButtonElement(
                 text="Back to editing...",
-                action_id="status_update_preview_block_edit_action"
+                action_id="status_update_preview_back_to_editing_clicked"
             )
         ]
     )
