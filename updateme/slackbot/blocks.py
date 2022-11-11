@@ -1,8 +1,10 @@
-from typing import List
+from datetime import date
+from typing import List, Optional
 from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Option, StaticSelectElement, \
-    PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject
+    PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject, HeaderBlock, DividerBlock, ContextBlock
 
 from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate
+from updateme.slackbot.utils import es
 
 
 def home_page_actions_block(selected: str = "my_updates") -> ActionsBlock:
@@ -22,6 +24,33 @@ def home_page_actions_block(selected: str = "my_updates") -> ActionsBlock:
                 text="Company Updates",
                 style="primary" if selected == "company_updates" else None,
                 action_id="home_page_company_updates_button_clicked"
+            ),
+        ]
+    )
+
+
+def home_page_status_update_filters(teams: List[Team], projects: List[Project]):
+    all_teams_option = Option(value="__all__", label="All teams")
+    all_projects_option = Option(value="__all__", label="All projects")
+
+    return ActionsBlock(
+        block_id="status_updates_filter_block",
+        elements=[
+            StaticSelectElement(
+                action_id="home_page_select_team_filter_changed",
+                initial_option=all_teams_option,
+                options=[
+                    all_teams_option,
+                    *[Option(value=team.uuid, label=team.name) for team in teams],
+                ]
+            ),
+            StaticSelectElement(
+                action_id="home_page_select_project_filter_changed",
+                initial_option=all_projects_option,
+                options=[
+                    all_projects_option,
+                    *[Option(value=project.uuid, label=project.name) for project in projects],
+                ]
             ),
         ]
     )
@@ -156,7 +185,7 @@ def status_update_preview_block(status_update: StatusUpdate) \
     return SectionBlock(
         text=TextObject(
             type="mrkdwn",
-            text=text,
+            text=es(text),
             # emoji=True
         )
     )
@@ -175,28 +204,69 @@ def status_update_preview_back_to_editing_block() -> ActionsBlock:
 
 def status_update_list_blocks(status_updates: List[StatusUpdate]) -> List[SectionBlock]:
     result = []
-    for status_update in status_updates:
+    last_date: Optional[date] = None
+    for pos, status_update in enumerate(status_updates):
+        if last_date is None or status_update.created_at.date() != last_date:
+            last_date = status_update.created_at.date()
+            result.append(HeaderBlock(
+                block_id="date_header_block",
+                text=last_date.strftime("%A, %B %-d")
+            ))
+            result.append(DividerBlock())
+
         title = ""
         if status_update.type:
             title += status_update.type.emoji + f" *{status_update.type.name}*"
         if status_update.projects:
             title += " @ " + ", ".join(project.name for project in status_update.projects)
 
-        text = " • " + status_update.text
+        text = " • "
+        text += status_update.text
+        if status_update.emoji:
+            text += " " + status_update.emoji.emoji
+
+        if title:
+            result.append(SectionBlock(
+                text=TextObject(
+                    block_id=f"title_block_{pos}",
+                    type="mrkdwn",
+                    text=es(title),
+                    # emoji=True
+                )
+            ))
 
         result.append(SectionBlock(
-            text=TextObject(
-                type="mrkdwn",
-                text=title,
-                # emoji=True
-            )
-        ))
-
-        result.append(SectionBlock(
+            block_id=f"status_update_text_block_{pos}",
             text=TextObject(
                 type="plain_text",
                 text=text,
                 emoji=True
             )
         ))
+
+        published_by_text = ""
+        if status_update.author_slack_user_id:
+            published_by_text += f"Published by <@{es(status_update.author_slack_user_id)}>"
+            if status_update.teams:
+                published_by_text += " on behalf of "
+        elif status_update.teams:
+            published_by_text += "From "
+
+        if status_update.teams:
+            published_by_text += ", ".join(es(team.name) for team in status_update.teams) + " team"
+            if len(status_update.teams) > 1:
+                published_by_text += "s"
+
+        if published_by_text:
+            result.append(ContextBlock(
+                block_id=f"published_by_block_{pos}",
+                elements=[
+                    TextObject(
+                        type="mrkdwn",
+                        text=published_by_text
+                    )
+                ]
+            ))
+
+        result.append(DividerBlock())
     return result

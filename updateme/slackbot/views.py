@@ -1,13 +1,15 @@
 import json
+from typing import Tuple, Optional
 
 from slack_sdk.models.blocks import DividerBlock
 from slack_sdk.models.views import View
 
 from updateme.slackbot.blocks import status_update_type_block, status_update_emoji_block, status_update_teams_block, \
     status_update_projects_block, status_update_text_block, status_update_preview_block, \
-    status_update_preview_back_to_editing_block, status_update_list_blocks, home_page_actions_block
+    status_update_preview_back_to_editing_block, status_update_list_blocks, home_page_actions_block, \
+    home_page_status_update_filters
 from updateme.core import dao
-from updateme.core.model import StatusUpdate
+from updateme.core.model import StatusUpdate, Project, Team
 
 STATUS_UPDATE_TYPE_BLOCK = "status_update_type_block"
 STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID = "status_update_modal__status_update_type_action_id"
@@ -93,6 +95,24 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
     )
 
 
+def retrieve_status_update_filters_from_view(body) -> Tuple[Optional[Team], Optional[Project]]:
+    values = body["view"]["state"]["values"]["status_updates_filter_block"]
+
+    try:
+        team_id = values["home_page_select_team_filter_changed"]["selected_option"]["value"]
+        team = dao.read_team(team_id)
+    except KeyError:
+        team = None
+
+    try:
+        project_id = values["home_page_select_project_filter_changed"]["selected_option"]["value"]
+        project = dao.read_project(project_id)
+    except KeyError:
+        project = None
+
+    return team, project
+
+
 def status_update_dialog_view(state: StatusUpdate = None) -> View:
     return View(
         type="modal",
@@ -157,13 +177,24 @@ def home_page_my_updates_view(author_slack_user_id: str):
     )
 
 
-def home_page_company_updates_view():
+def home_page_company_updates_view(project: Project = None, team: Team = None):
+    kwargs = {}
+    if project:
+        kwargs["from_projects"] = [project.uuid]
+    if team:
+        kwargs["from_teams"] = [team.uuid]
+
     return View(
         type="home",
         title="Welcome to Chirik Bot!",
         blocks=[
             home_page_actions_block(selected="company_updates"),
             DividerBlock(),
-            *status_update_list_blocks(dao.read_status_updates(last_n=100))
+            home_page_status_update_filters(
+                teams=dao.read_teams(),
+                projects=dao.read_projects()
+            ),
+            DividerBlock(),
+            *status_update_list_blocks(dao.read_status_updates(last_n=100, **kwargs))
         ]
     )

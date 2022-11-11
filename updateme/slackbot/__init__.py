@@ -12,7 +12,7 @@ from updateme.slackbot.views import status_update_dialog_view, retrieve_status_u
     share_status_update_preview_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_EMOJI_ACTION_ID, STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID, retrieve_private_metadata_from_view, \
-    home_page_my_updates_view, home_page_company_updates_view
+    home_page_my_updates_view, home_page_company_updates_view, retrieve_status_update_filters_from_view
 
 logging.basicConfig(level=logging.DEBUG)
 app = App(token=os.getenv("SLACK_BOT_TOKEN", "<wrong_token>"))
@@ -73,6 +73,25 @@ def home_page_company_updates_button_click_handler(ack, body, logger):
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("home_page_select_team_filter_changed")
+def home_page_select_team_filter_change_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    try:
+        team, project = retrieve_status_update_filters_from_view(body)
+        app.client.views_publish(
+            user_id=body["user"]["id"],
+            view=home_page_company_updates_view(team=team, project=project)
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("home_page_select_project_filter_changed")
+def home_page_select_team_project_change_handler(ack, body, logger):
+    home_page_select_team_filter_change_handler(ack, body, logger)
 
 
 @app.action("share_status_update_button_clicked")
