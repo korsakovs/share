@@ -51,3 +51,13 @@ class StatusUpdate:
 
     teams: List[Team] = field(default_factory=list)
     projects: List[Project] = field(default_factory=list)
+
+
+@dataclass
+class SlackUserPreferences:
+    user_id: str
+
+    active_tab: Optional[str] = None
+
+    active_team_filter: Optional[Team] = None
+    active_project_filter: Optional[Project] = None

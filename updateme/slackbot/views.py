@@ -177,7 +177,7 @@ def home_page_my_updates_view(author_slack_user_id: str):
     )
 
 
-def home_page_company_updates_view(project: Project = None, team: Team = None):
+def home_page_company_updates_view(team: Team = None, project: Project = None):
     kwargs = {}
     if project:
         kwargs["from_projects"] = [project.uuid]
@@ -192,7 +192,9 @@ def home_page_company_updates_view(project: Project = None, team: Team = None):
             DividerBlock(),
             home_page_status_update_filters(
                 teams=dao.read_teams(),
-                projects=dao.read_projects()
+                projects=dao.read_projects(),
+                active_team=team,
+                active_project=project
             ),
             DividerBlock(),
             *status_update_list_blocks(dao.read_status_updates(last_n=100, **kwargs))

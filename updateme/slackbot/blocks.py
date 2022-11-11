@@ -29,16 +29,23 @@ def home_page_actions_block(selected: str = "my_updates") -> ActionsBlock:
     )
 
 
-def home_page_status_update_filters(teams: List[Team], projects: List[Project]):
+def home_page_status_update_filters(teams: List[Team], projects: List[Project], active_team: Team = None,
+                                    active_project: Project = None):
     all_teams_option = Option(value="__all__", label="All teams")
     all_projects_option = Option(value="__all__", label="All projects")
+
+    active_team_option = all_teams_option if active_team is None or active_team.uuid not in [t.uuid for t in teams] \
+        else Option(value=active_team.uuid, label=active_team.name)
+    active_project_option = all_projects_option if active_project is None \
+        or active_project.uuid not in [p.uuid for p in projects] \
+        else Option(value=active_project.uuid, label=active_project.name)
 
     return ActionsBlock(
         block_id="status_updates_filter_block",
         elements=[
             StaticSelectElement(
                 action_id="home_page_select_team_filter_changed",
-                initial_option=all_teams_option,
+                initial_option=active_team_option,
                 options=[
                     all_teams_option,
                     *[Option(value=team.uuid, label=team.name) for team in teams],
@@ -46,7 +53,7 @@ def home_page_status_update_filters(teams: List[Team], projects: List[Project]):
             ),
             StaticSelectElement(
                 action_id="home_page_select_project_filter_changed",
-                initial_option=all_projects_option,
+                initial_option=active_project_option,
                 options=[
                     all_projects_option,
                     *[Option(value=project.uuid, label=project.name) for project in projects],

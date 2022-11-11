@@ -8,6 +8,7 @@ from slack_sdk import WebClient
 from slack_sdk.web import SlackResponse
 
 from updateme.core import dao
+from updateme.slackbot.utils import get_or_create_slack_user_preferences
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_EMOJI_ACTION_ID, STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
@@ -40,10 +41,21 @@ def status_update_modal_status_projects_action_handler(ack):
 
 @app.event("app_home_opened")
 def home_page_open_handler(client: WebClient, event, logger):
+    user_id = event["user"]
+    user_preferences = get_or_create_slack_user_preferences(user_id)
+
+    if user_preferences.active_tab == "my_updates":
+        view = home_page_my_updates_view(user_id)
+    else:
+        view = home_page_company_updates_view(
+            team=user_preferences.active_team_filter,
+            project=user_preferences.active_project_filter
+        )
+
     try:
         client.views_publish(
-            user_id=event["user"],
-            view=home_page_my_updates_view(event["user"])
+            user_id=user_id,
+            view=view
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -53,10 +65,14 @@ def home_page_open_handler(client: WebClient, event, logger):
 def home_page_my_updates_button_click_handler(ack, body, logger):
     ack()
     logger.info(body)
+    user_id = body["user"]["id"]
+    user_preferences = get_or_create_slack_user_preferences(user_id)
+    user_preferences.active_tab = "my_updates"
+    dao.insert_status_update(user_preferences)
     try:
         app.client.views_publish(
-            user_id=body["user"]["id"],
-            view=home_page_my_updates_view(body["user"]["id"])
+            user_id=user_id,
+            view=home_page_my_updates_view(user_id)
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -66,10 +82,27 @@ def home_page_my_updates_button_click_handler(ack, body, logger):
 def home_page_company_updates_button_click_handler(ack, body, logger):
     ack()
     logger.info(body)
+    user_id = body["user"]["id"]
+    user_preferences = get_or_create_slack_user_preferences(user_id)
+    if user_preferences.active_tab == "company_updates":
+        # Something is wrong in the home_page_status_update_filters function. Even if we pass Nulls
+        # instead of team and project - it doesn't reset filters, which creates inconsistency - user sees
+        # status updates from all teams and projects, even though one or both of the filters contain some values
+        # So, disabling this code for now
+
+        # user_preferences.active_team_filter = None
+        # user_preferences.active_project_filter = None
+        pass
+    else:
+        user_preferences.active_tab = "company_updates"
+    dao.insert_status_update(user_preferences)
     try:
         app.client.views_publish(
-            user_id=body["user"]["id"],
-            view=home_page_company_updates_view()
+            user_id=user_id,
+            view=home_page_company_updates_view(
+                team=user_preferences.active_team_filter,
+                project=user_preferences.active_project_filter
+            )
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -81,8 +114,13 @@ def home_page_select_team_filter_change_handler(ack, body, logger):
     logger.info(body)
     try:
         team, project = retrieve_status_update_filters_from_view(body)
+        user_id = body["user"]["id"]
+        user_preferences = get_or_create_slack_user_preferences(user_id)
+        user_preferences.active_team_filter = team
+        user_preferences.active_project_filter = project
+        dao.insert_status_update(user_preferences)
         app.client.views_publish(
-            user_id=body["user"]["id"],
+            user_id=user_id,
             view=home_page_company_updates_view(team=team, project=project)
         )
     except Exception as e:
@@ -140,6 +178,11 @@ def status_update_preview_back_to_editing_click_handler(ack, body, logger):
 def status_update_preview_share_button_click_handler(ack, body, logger):
     ack()
     dao.publish_status_update(retrieve_private_metadata_from_view(body).status_update_uuid)
+
+
+@app.event("message")
+def handle_message_events(body, logger):
+    logger.info(body)
 
 
 def workflow_step_edit_execute(step: dict, client: WebClient, complete: Complete, fail: Fail):

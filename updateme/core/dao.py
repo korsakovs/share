@@ -18,7 +18,7 @@ from sqlalchemy.orm import registry, sessionmaker
 from sqlalchemy.orm import relationship
 from typing import List, Optional
 
-from updateme.core.model import Project, StatusUpdate, StatusUpdateType, Team, StatusUpdateEmoji
+from updateme.core.model import Project, StatusUpdate, StatusUpdateType, Team, StatusUpdateEmoji, SlackUserPreferences
 from updateme.core.config import INITIAL_TEAM_NAMES, INITIAL_PROJECT_NAMES, INITIAL_STATUS_UPDATE_EMOJIS, \
     INITIAL_STATUS_UPDATE_TYPES
 
@@ -91,6 +91,12 @@ class Dao(ABC):
     @abstractmethod
     def read_status_update_emojis(self) -> List[StatusUpdateEmoji]: ...
 
+    @abstractmethod
+    def read_slack_user_preferences(self, user_id: str) -> Optional[SlackUserPreferences]: ...
+
+    @abstractmethod
+    def insert_slack_user_preferences(self, slack_user_preferences: SlackUserPreferences): ...
+
 
 class SQLAlchemyDao(Dao, ABC):
     _TEAMS_TABLE = "teams"
@@ -98,6 +104,7 @@ class SQLAlchemyDao(Dao, ABC):
     _PROJECTS_TABLE = "projects"
     _STATUS_UPDATE_TYPES_TABLE = "status_update_types"
     _STATUS_UPDATE_EMOJIS_TABLE = "status_update_emojis"
+    _SLACK_USER_PREFERENCES_TABLE = "slack_user_preferences"
 
     @abstractmethod
     def _create_engine(self) -> Engine: ...
@@ -173,6 +180,17 @@ class SQLAlchemyDao(Dao, ABC):
             Column("team_uuid", ForeignKey(f"{self._TEAMS_TABLE}.uuid")),
         )
 
+        self._slack_user_preferences_table = Table(
+            self._SLACK_USER_PREFERENCES_TABLE,
+            self._metadata_obj,
+            Column("user_id", String(256), primary_key=True, nullable=False),
+            Column("active_tab", String(256), nullable=True),
+            Column("active_team_filter__team_uuid", String(256), ForeignKey(f"{self._TEAMS_TABLE}.uuid"),
+                   nullable=True),
+            Column("active_project_filter__project_uuid", String(256), ForeignKey(f"{self._PROJECTS_TABLE}.uuid"),
+                   nullable=True),
+        )
+
         self._mapper_registry.map_imperatively(Team, self._teams_table)
         self._mapper_registry.map_imperatively(Project, self._projects_table)
         self._mapper_registry.map_imperatively(StatusUpdateType, self._status_update_types_table)
@@ -188,6 +206,15 @@ class SQLAlchemyDao(Dao, ABC):
                                          order_by=self._projects_table.c.name),
                 "teams": relationship(Team, secondary=self._status_update_teams_association_table,
                                       order_by=self._teams_table.c.name)
+            }
+        )
+
+        self._mapper_registry.map_imperatively(
+            SlackUserPreferences,
+            self._slack_user_preferences_table,
+            properties={
+                "active_team_filter": relationship(Team),
+                "active_project_filter": relationship(Project)
             }
         )
 
@@ -287,6 +314,12 @@ class SQLAlchemyDao(Dao, ABC):
 
     def read_status_update_emojis(self) -> List[StatusUpdateEmoji]:
         return self._session.query(StatusUpdateEmoji).filter(StatusUpdateEmoji.deleted == false()).all()
+
+    def read_slack_user_preferences(self, user_id: str) -> Optional[SlackUserPreferences]:
+        return self._session.get(SlackUserPreferences, user_id)
+
+    def insert_slack_user_preferences(self, slack_user_preferences: SlackUserPreferences):
+        self._merge_and_commit(slack_user_preferences)
 
 
 class SQLiteInMemoryDao(SQLAlchemyDao):
