@@ -1,7 +1,8 @@
 from datetime import date
 from typing import List, Optional
 from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Option, StaticSelectElement, \
-    PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject, HeaderBlock, DividerBlock, ContextBlock
+    PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject, HeaderBlock, DividerBlock, \
+    ContextBlock, MarkdownTextObject, PlainTextObject
 
 from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate
 from updateme.slackbot.utils import es
@@ -178,26 +179,6 @@ def status_update_text_block(label: str = "Status Update", initial_value: str = 
     )
 
 
-def status_update_preview_block(status_update: StatusUpdate) \
-        -> SectionBlock:
-    text = " • "
-    if status_update.emoji:
-        text += status_update.emoji.emoji + " "
-    if status_update.projects:
-        text += " / ".join(project.name for project in status_update.projects) + " : "
-    text += status_update.text.strip()
-    if status_update.teams:
-        text += "\n\n_" + ", ".join(team.name for team in status_update.teams) + "_"
-
-    return SectionBlock(
-        text=TextObject(
-            type="mrkdwn",
-            text=es(text),
-            # emoji=True
-        )
-    )
-
-
 def status_update_preview_back_to_editing_block() -> ActionsBlock:
     return ActionsBlock(
         elements=[
@@ -209,71 +190,92 @@ def status_update_preview_back_to_editing_block() -> ActionsBlock:
     )
 
 
+def status_update_blocks(status_update: StatusUpdate) -> List[SectionBlock]:
+    result = []
+    title = ""
+    if status_update.type:
+        title += status_update.type.emoji + f" *{status_update.type.name}*"
+    if status_update.projects:
+        title += " @ " + ", ".join(project.name for project in status_update.projects)
+
+    text = " • "
+    text += status_update.text
+    if status_update.emoji:
+        text += " " + status_update.emoji.emoji
+
+    attachments_text = ""
+    if status_update.images:
+        attachments_text += "\n\n*Attachments*:\n"
+        for image in status_update.images:
+            description = ""
+            if image.description:
+                description = f" - {image.description}"
+            attachments_text += f" • <{image.url}|{image.title or image.filename}>{description}\n"
+
+    if title:
+        result.append(SectionBlock(
+            text=TextObject(
+                type="mrkdwn",
+                text=es(title),
+                # emoji=True
+            )
+        ))
+
+    if status_update.rich_text:
+        result.append(SectionBlock(text=MarkdownTextObject(text=text)))
+    else:
+        result.append(SectionBlock(text=PlainTextObject(text=text, emoji=True)))
+
+    if attachments_text:
+        result.append(SectionBlock(
+            text=TextObject(
+                type="mrkdwn",
+                text=attachments_text,
+                # emoji=True
+            )
+        ))
+
+    published_by_text = ""
+    if status_update.author_slack_user_id:
+        published_by_text += f"Shared by <@{es(status_update.author_slack_user_id)}>"
+        if status_update.teams:
+            published_by_text += " on behalf of "
+    elif status_update.teams:
+        published_by_text += "From "
+
+    if status_update.teams:
+        if len(status_update.teams) == 1:
+            published_by_text += "*" + es(status_update.teams[0].name) + "*" + " team"
+        else:
+            published_by_text += ", ".join("*" + es(team.name) + "*" for team in status_update.teams[:-1])
+            if len(status_update.teams) > 2:
+                published_by_text += ","
+            published_by_text += " and *" + es(status_update.teams[-1].name) + "*" + " teams"
+
+    if published_by_text:
+        result.append(ContextBlock(
+            elements=[
+                TextObject(
+                    type="mrkdwn",
+                    text=published_by_text
+                )
+            ]
+        ))
+
+    return result
+
+
 def status_update_list_blocks(status_updates: List[StatusUpdate]) -> List[SectionBlock]:
     result = []
     last_date: Optional[date] = None
-    for pos, status_update in enumerate(status_updates):
+    for status_update in status_updates:
         if last_date is None or status_update.created_at.date() != last_date:
             last_date = status_update.created_at.date()
             result.append(HeaderBlock(
-                block_id="date_header_block",
                 text=last_date.strftime("%A, %B %-d")
             ))
             result.append(DividerBlock())
 
-        title = ""
-        if status_update.type:
-            title += status_update.type.emoji + f" *{status_update.type.name}*"
-        if status_update.projects:
-            title += " @ " + ", ".join(project.name for project in status_update.projects)
-
-        text = " • "
-        text += status_update.text
-        if status_update.emoji:
-            text += " " + status_update.emoji.emoji
-
-        if title:
-            result.append(SectionBlock(
-                text=TextObject(
-                    block_id=f"title_block_{pos}",
-                    type="mrkdwn",
-                    text=es(title),
-                    # emoji=True
-                )
-            ))
-
-        result.append(SectionBlock(
-            block_id=f"status_update_text_block_{pos}",
-            text=TextObject(
-                type="plain_text",
-                text=text,
-                emoji=True
-            )
-        ))
-
-        published_by_text = ""
-        if status_update.author_slack_user_id:
-            published_by_text += f"Published by <@{es(status_update.author_slack_user_id)}>"
-            if status_update.teams:
-                published_by_text += " on behalf of "
-        elif status_update.teams:
-            published_by_text += "From "
-
-        if status_update.teams:
-            published_by_text += ", ".join(es(team.name) for team in status_update.teams) + " team"
-            if len(status_update.teams) > 1:
-                published_by_text += "s"
-
-        if published_by_text:
-            result.append(ContextBlock(
-                block_id=f"published_by_block_{pos}",
-                elements=[
-                    TextObject(
-                        type="mrkdwn",
-                        text=published_by_text
-                    )
-                ]
-            ))
-
+        result.extend(status_update_blocks(status_update))
         result.append(DividerBlock())
     return result

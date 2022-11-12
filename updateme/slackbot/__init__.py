@@ -5,10 +5,11 @@ from slack_bolt import App, Ack
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.workflows.step import WorkflowStep, Configure, Update, Complete, Fail
 from slack_sdk import WebClient
+from slack_sdk.models.metadata import Metadata
 from slack_sdk.web import SlackResponse
 
 from updateme.core import dao
-from updateme.core.model import StatusUpdateSource
+from updateme.core.model import StatusUpdateSource, StatusUpdate
 from updateme.slackbot.messages import status_update_preview_message, status_update_from_message
 from updateme.slackbot.utils import get_or_create_slack_user_preferences
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
@@ -188,16 +189,90 @@ def status_update_preview_share_button_click_handler(ack, body, logger):
 @app.event("message")
 def message_event_handler(body, logger):
     status_update = status_update_from_message(body)
+    status_update.published = False
     dao.insert_status_update(status_update)
 
+    prefix = ""
+    if status_update.projects:
+        prefix = ", ".join(project.name for project in status_update.projects) + ": "
+    elif status_update.teams:
+        prefix = ", ".join(team.name for team in status_update.teams) + ": "
+
     app.client.chat_postMessage(
+        metadata=Metadata(event_type="my_type", event_payload={"status_update_uuid": status_update.uuid}),
+        text=prefix + status_update.text,  # This text will be displayed in notifications
         channel=body["event"]["channel"],
-        as_user=True,
         blocks=status_update_preview_message(status_update)
     )
     # TODO: Delete original message (if possible) !! OR !! Update status update preview on original message update
     # app.client.chat_delete()
     logger.info(body)
+
+
+@app.action("status_update_message_preview_team_selected")
+def status_update_message_preview_team_select_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    status_update_uuid = body["message"]["metadata"]["event_payload"]["status_update_uuid"]
+    status_update = dao.read_status_update(status_update_uuid)
+    if status_update is None:
+        status_update = StatusUpdate(
+            source=StatusUpdateSource.SLACK_MESSAGE,
+            text=body["message"]["text"],
+            published=False,
+        )
+    status_update.teams = [dao.read_team(team["value"]) for team in body["state"]["values"][
+        "status_update_preview_teams_list"]["status_update_message_preview_team_selected"]["selected_options"]]
+    status_update.projects = [dao.read_project(project["value"]) for project in body["state"]["values"][
+        "status_update_preview_projects_list"]["status_update_message_preview_project_selected"]["selected_options"]]
+    try:
+        status_update_type_uuid = body["state"]["values"]["status_update_preview_status_update_type"][
+            "status_update_message_preview_status_update_type_selected"]["selected_option"]["value"]
+        status_update.type = dao.read_status_update_type(status_update_type_uuid)
+    except TypeError:
+        status_update.type = None
+    dao.insert_status_update(status_update)
+
+    prefix = ""
+    if status_update.projects:
+        prefix = ", ".join(project.name for project in status_update.projects) + ": "
+    elif status_update.teams:
+        prefix = ", ".join(team.name for team in status_update.teams) + ": "
+
+    app.client.chat_update(
+        channel=body["channel"]["id"],
+        ts=body["message"]["ts"],
+        text=prefix + status_update.text,
+        blocks=status_update_preview_message(status_update)
+    )
+
+
+@app.action("status_update_message_preview_project_selected")
+def status_update_message_preview_project_select_handler(ack, body, logger):
+    status_update_message_preview_team_select_handler(ack, body, logger)
+
+
+@app.action("status_update_message_preview_status_update_type_selected")
+def status_update_message_preview_status_update_type_select_handler(ack, body, logger):
+    status_update_message_preview_team_select_handler(ack, body, logger)
+
+
+@app.action("status_update_message_preview_publish_button_clicked")
+def status_update_message_preview_publish_button_click_handler(ack, body, logger):
+    status_update_uuid = body["message"]["metadata"]["event_payload"]["status_update_uuid"]
+    status_update = dao.read_status_update(status_update_uuid)
+    status_update.published = True
+    dao.insert_status_update(status_update)
+    status_update_message_preview_team_select_handler(ack, body, logger)
+
+
+@app.action("status_update_message_preview_cancel_button_clicked")
+def status_update_message_preview_cancel_button_click_handler(ack, body, logger):
+    status_update_uuid = body["message"]["metadata"]["event_payload"]["status_update_uuid"]
+    status_update = dao.read_status_update(status_update_uuid)
+    status_update.deleted = True
+    dao.insert_status_update(status_update)
+    status_update_message_preview_team_select_handler(ack, body, logger)
 
 
 def workflow_step_edit_execute(step: dict, client: WebClient, complete: Complete, fail: Fail):

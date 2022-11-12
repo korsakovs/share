@@ -52,10 +52,11 @@ class StatusUpdateImage:
 
 @dataclass
 class StatusUpdate:
-    type: StatusUpdateType
-    emoji: StatusUpdateEmoji
     text: str
     source: StatusUpdateSource
+
+    type: Optional[StatusUpdateType] = None
+    emoji: Optional[StatusUpdateEmoji] = None
 
     published: bool = False
     deleted: bool = False

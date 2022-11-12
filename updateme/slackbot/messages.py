@@ -1,9 +1,12 @@
 from typing import List
 
-from slack_sdk.models.blocks import Block, HeaderBlock, DividerBlock, SectionBlock, MarkdownTextObject, InputBlock, \
-    StaticMultiSelectElement, Option, ActionsBlock, ButtonElement
+from slack_sdk.models.blocks import Block, HeaderBlock, DividerBlock, ActionsBlock, ButtonElement, SectionBlock, \
+    MarkdownTextObject
 
+from updateme.core import dao
 from updateme.core.model import StatusUpdate, StatusUpdateSource, StatusUpdateImage
+from updateme.slackbot.blocks import status_update_blocks, status_update_teams_block, status_update_projects_block, \
+    status_update_type_block
 
 
 def status_update_from_message(body) -> StatusUpdate:
@@ -15,11 +18,10 @@ def status_update_from_message(body) -> StatusUpdate:
     else:
         images = []
     return StatusUpdate(
-        emoji=None,
-        type=None,
         text=text,
         rich_text=True,
         source=StatusUpdateSource.SLACK_MESSAGE,
+        author_slack_user_id=body["event"]["user"],
         images=[StatusUpdateImage(
             url=image["url_private"],
             filename=image["name"],
@@ -30,52 +32,53 @@ def status_update_from_message(body) -> StatusUpdate:
 
 
 def status_update_preview_message(status_update: StatusUpdate) -> List[Block]:
-    text = status_update.text
+    suffix_block = ActionsBlock(
+        elements=[
+            ButtonElement(
+                action_id="status_update_message_preview_publish_button_clicked",
+                text="Share!",
+                style="primary"
+            ),
+            ButtonElement(
+                action_id="status_update_message_preview_cancel_button_clicked",
+                text="Cancel",
+                style="danger"
+            ),
+        ]
+    )
 
-    if status_update.images:
-        text += "\n\n*Attachments*:\n"
-        for image in status_update.images:
-            description = ""
-            if image.description:
-                description = f" - {image.description}"
-            text += f" • <{image.url}|{image.title or image.filename}>{description}\n"
+    input_blocks = [
+        status_update_type_block(
+            block_id="status_update_preview_status_update_type",
+            action_id="status_update_message_preview_status_update_type_selected",
+            status_update_groups=dao.read_status_update_types(),
+            selected_value=status_update.type
+        ),
+        status_update_teams_block(
+            block_id="status_update_preview_teams_list",
+            action_id="status_update_message_preview_team_selected",
+            status_update_teams=dao.read_teams(),
+            selected_options=status_update.teams
+        ),
+        status_update_projects_block(
+            block_id="status_update_preview_projects_list",
+            action_id="status_update_message_preview_project_selected",
+            status_update_projects=dao.read_projects(),
+            selected_options=status_update.projects
+        ),
+    ]
+    if status_update.deleted:
+        input_blocks = []
+        suffix_block = SectionBlock(text=MarkdownTextObject(text="*Discarded*"))
+    elif status_update.published:
+        input_blocks = []
+        suffix_block = SectionBlock(text=MarkdownTextObject(text="*Shared!*"))
 
     return [
         HeaderBlock(text="Status Update Preview"),
         DividerBlock(),
-        SectionBlock(
-            text=MarkdownTextObject(
-                text=text
-            )
-        ),
-        InputBlock(
-            label="Pick one or multiple teams",
-            element=StaticMultiSelectElement(
-                placeholder="Some text",
-                options=[
-                    Option(value="1111", label="2222")
-                ]
-            )
-        ),
-        InputBlock(
-            label="Pick one or multiple projects",
-            element=StaticMultiSelectElement(
-                placeholder="Some text",
-                options=[
-                    Option(value="1111", label="2222")
-                ]
-            )
-        ),
-        ActionsBlock(
-            elements=[
-                ButtonElement(
-                    text="Publish",
-                    style="primary"
-                ),
-                ButtonElement(
-                    text="Cancel",
-                    style="danger"
-                ),
-            ]
-        )
+        *status_update_blocks(status_update),
+        DividerBlock(),
+        *input_blocks,
+        suffix_block
     ]
