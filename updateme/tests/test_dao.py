@@ -4,7 +4,7 @@ import string
 from random import choices
 
 from updateme.core import dao
-from updateme.core.model import Project, Team, StatusUpdate, StatusUpdateSource
+from updateme.core.model import Project, Team, StatusUpdate, StatusUpdateSource, Department
 
 
 @pytest.fixture
@@ -28,8 +28,28 @@ def existing_project(non_existing_project) -> Project:
 
 
 @pytest.fixture
-def non_existing_team() -> Team:
-    team = Team("test_team_" + "".join(choices(string.ascii_letters, k=16)))
+def non_existing_department() -> Team:
+    department = Department("test_department_" + "".join(choices(string.ascii_letters, k=16)))
+    for d_ in dao.read_departments():
+        if d_.uuid == department.uuid:
+            raise AssertionError("Can not create non-existing department")
+    yield department
+
+
+@pytest.fixture
+def existing_department(non_existing_department) -> Department:
+    dao.insert_department(non_existing_department)
+    for d_ in dao.read_departments():
+        if d_.uuid == non_existing_department.uuid:
+            break
+    else:
+        raise AssertionError("Can not create existing department")
+    yield non_existing_department
+
+
+@pytest.fixture
+def non_existing_team(existing_department) -> Team:
+    team = Team("test_team_" + "".join(choices(string.ascii_letters, k=16)), department=existing_department)
     for t_ in dao.read_teams():
         if t_.uuid == team.uuid:
             raise AssertionError("Can not create non-existing team")
@@ -37,7 +57,7 @@ def non_existing_team() -> Team:
 
 
 @pytest.fixture
-def existing_team(non_existing_team) -> Project:
+def existing_team(non_existing_team) -> Team:
     dao.insert_team(non_existing_team)
     for t_ in dao.read_teams():
         if t_.uuid == non_existing_team.uuid:

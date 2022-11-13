@@ -9,7 +9,7 @@ from updateme.slackbot.blocks import status_update_type_block, status_update_emo
     status_update_preview_back_to_editing_block, status_update_list_blocks, home_page_actions_block, \
     home_page_status_update_filters, status_update_blocks
 from updateme.core import dao
-from updateme.core.model import StatusUpdate, Project, Team, StatusUpdateSource
+from updateme.core.model import StatusUpdate, Project, Team, StatusUpdateSource, Department
 
 STATUS_UPDATE_TYPE_BLOCK = "status_update_type_block"
 STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID = "status_update_modal__status_update_type_action_id"
@@ -96,22 +96,26 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
     )
 
 
-def retrieve_status_update_filters_from_view(body) -> Tuple[Optional[Team], Optional[Project]]:
+def retrieve_status_update_filters_from_view(body) -> Tuple[Optional[Team], Optional[Department], Optional[Project]]:
     values = body["view"]["state"]["values"]["status_updates_filter_block"]
 
+    team, department, project = None, None, None
+
     try:
-        team_id = values["home_page_select_team_filter_changed"]["selected_option"]["value"]
-        team = dao.read_team(team_id)
+        team_or_department_id = values["home_page_select_team_filter_changed"]["selected_option"]["value"]
+        team = dao.read_team(team_or_department_id)
+        if team is None:
+            department = dao.read_department(team_or_department_id)
     except KeyError:
-        team = None
+        pass
 
     try:
         project_id = values["home_page_select_project_filter_changed"]["selected_option"]["value"]
         project = dao.read_project(project_id)
     except KeyError:
-        project = None
+        pass
 
-    return team, project
+    return team, department, project
 
 
 def status_update_dialog_view(state: StatusUpdate = None) -> View:
@@ -173,17 +177,20 @@ def home_page_my_updates_view(author_slack_user_id: str):
         blocks=[
             home_page_actions_block(),
             DividerBlock(),
-            *status_update_list_blocks(dao.read_status_updates(author_slack_user_id=author_slack_user_id, last_n=100))
+            *status_update_list_blocks(dao.read_status_updates(author_slack_user_id=author_slack_user_id, last_n=100),
+                                       dao.read_status_update_reactions())
         ]
     )
 
 
-def home_page_company_updates_view(team: Team = None, project: Project = None):
+def home_page_company_updates_view(team: Team = None, department: Department = None, project: Project = None):
     kwargs = {}
     if project:
         kwargs["from_projects"] = [project.uuid]
     if team:
         kwargs["from_teams"] = [team.uuid]
+    if department:
+        kwargs["from_departments"] = [department.uuid]
 
     return View(
         type="home",
@@ -195,9 +202,11 @@ def home_page_company_updates_view(team: Team = None, project: Project = None):
                 teams=dao.read_teams(),
                 projects=dao.read_projects(),
                 active_team=team,
+                active_department=department,
                 active_project=project
             ),
             DividerBlock(),
-            *status_update_list_blocks(dao.read_status_updates(last_n=100, **kwargs))
+            *status_update_list_blocks(dao.read_status_updates(last_n=100, **kwargs),
+                                       dao.read_status_update_reactions())
         ]
     )

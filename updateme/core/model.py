@@ -12,8 +12,16 @@ class StatusUpdateSource(Enum):
 
 
 @dataclass
+class Department:
+    name: str
+    uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    deleted: bool = False
+
+
+@dataclass
 class Team:
     name: str
+    department: Department
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
     deleted: bool = False
 
@@ -37,6 +45,14 @@ class StatusUpdateType:
 class StatusUpdateEmoji:
     emoji: str
     meaning: str
+    uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    deleted: bool = False
+
+
+@dataclass
+class StatusUpdateReaction:
+    emoji: str
+    name: str
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
     deleted: bool = False
 
@@ -79,4 +95,5 @@ class SlackUserPreferences:
     active_tab: Optional[str] = None
 
     active_team_filter: Optional[Team] = None
+    active_department_filter: Optional[Department] = None
     active_project_filter: Optional[Project] = None

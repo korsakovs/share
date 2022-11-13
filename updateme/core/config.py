@@ -1,8 +1,19 @@
-INITIAL_TEAM_NAMES = [
-    "iOS SDK",
-    "Android SDK",
-    "Backend"
-]
+INITIAL_TEAM_NAMES = {
+    "R&D": [
+        "iOS SDK",
+        "Android SDK",
+        "Backend"
+    ],
+    "Product Support": [
+        "EMEA",
+        "APAC",
+        "North America"
+    ],
+    "Analytics": [
+        "Product Analytics",
+        "Business Analytics"
+    ]
+}
 
 
 INITIAL_PROJECT_NAMES = [
@@ -33,4 +44,11 @@ INITIAL_STATUS_UPDATE_TYPES = [
     ("Announce", "📢"),
     ("Release", "🎉"),
     ("Launch", "🚀"),
+    ("RFC", "📄"),
+]
+
+INITIAL_REACTIONS = [
+    ("Like", "👍"),
+    ("Congrats", "🥳"),
+    ("You rock!", "🚀"),
 ]

@@ -1,22 +1,27 @@
 import os
 import logging
 
-from slack_bolt import App, Ack
+from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
-from slack_bolt.workflows.step import WorkflowStep, Configure, Update, Complete, Fail
+from slack_bolt.workflows.step import WorkflowStep
 from slack_sdk import WebClient
 from slack_sdk.models.metadata import Metadata
-from slack_sdk.web import SlackResponse
 
 from updateme.core import dao
 from updateme.core.model import StatusUpdateSource, StatusUpdate
 from updateme.slackbot.messages import status_update_preview_message, status_update_from_message
-from updateme.slackbot.utils import get_or_create_slack_user_preferences
+from updateme.slackbot.utils import get_or_create_slack_user_preferences, teams_selector_option_groups
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_EMOJI_ACTION_ID, STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID, retrieve_private_metadata_from_view, \
     home_page_my_updates_view, home_page_company_updates_view, retrieve_status_update_filters_from_view
+from updateme.slackbot.workflows.email import email_updates_wf_step_edit_handler, email_updates_wf_step_save_handler, \
+    email_updates_wf_step_execute_handler
+from updateme.slackbot.workflows.publish import publish_updates_wf_step_edit_handler, \
+    publish_updates_wf_step_save_handler, publish_updates_wf_step_execute_handler
+from updateme.slackbot.workflows.remider import reminder_wf_step_edit_handler, reminder_wf_step_save_handler, \
+    reminder_wf_step_execute_handler
 
 logging.basicConfig(level=logging.DEBUG)
 app = App(token=os.getenv("SLACK_BOT_TOKEN", "<wrong_token>"))
@@ -52,6 +57,7 @@ def home_page_open_handler(client: WebClient, event, logger):
     else:
         view = home_page_company_updates_view(
             team=user_preferences.active_team_filter,
+            department=user_preferences.active_department_filter,
             project=user_preferences.active_project_filter
         )
 
@@ -94,16 +100,18 @@ def home_page_company_updates_button_click_handler(ack, body, logger):
         # So, disabling this code for now
 
         # user_preferences.active_team_filter = None
+        # user_preferences.active_department_filter = None
         # user_preferences.active_project_filter = None
         pass
     else:
         user_preferences.active_tab = "company_updates"
-    dao.insert_status_update(user_preferences)
+        dao.insert_slack_user_preferences(user_preferences)
     try:
         app.client.views_publish(
             user_id=user_id,
             view=home_page_company_updates_view(
                 team=user_preferences.active_team_filter,
+                department=user_preferences.active_department_filter,
                 project=user_preferences.active_project_filter
             )
         )
@@ -116,15 +124,16 @@ def home_page_select_team_filter_change_handler(ack, body, logger):
     ack()
     logger.info(body)
     try:
-        team, project = retrieve_status_update_filters_from_view(body)
+        team, department, project = retrieve_status_update_filters_from_view(body)
         user_id = body["user"]["id"]
         user_preferences = get_or_create_slack_user_preferences(user_id)
         user_preferences.active_team_filter = team
+        user_preferences.active_department_filter = department
         user_preferences.active_project_filter = project
         dao.insert_status_update(user_preferences)
         app.client.views_publish(
             user_id=user_id,
-            view=home_page_company_updates_view(team=team, project=project)
+            view=home_page_company_updates_view(team=team, department=department, project=project)
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -275,56 +284,26 @@ def status_update_message_preview_cancel_button_click_handler(ack, body, logger)
     status_update_message_preview_team_select_handler(ack, body, logger)
 
 
-def workflow_step_edit_execute(step: dict, client: WebClient, complete: Complete, fail: Fail):
-    complete(
-        outputs={
-            "taskName": step["inputs"]["taskName"]["value"],
-            "taskDescription": step["inputs"]["taskDescription"]["value"],
-            "taskAuthorEmail": step["inputs"]["taskAuthorEmail"]["value"],
-        }
-    )
-    home_tab_update: SlackResponse = client.views_publish(
-        user_id=user_id,
-        view={
-            "type": "home",
-            "title": {"type": "plain_text", "text": "Your tasks!"},
-            "blocks": [
-
-            ],
-        },
-    )
-    print("Execute")
-    print(step)
-
-
-def workflow_step_edit_edit(ack: Ack, step, configure: Configure):
-    ack()
-    configure(blocks=[
-        {
-            "type": "section",
-            "block_id": "intro-section",
-            "text": {
-                "type": "plain_text",
-                "text": "Create a task in one of the listed projects. The link to the task and other details will be available as variable data in later steps.",
-                # noqa: E501
-            },
-        }
-    ])
-
-
-def workflow_step_edit_save(ack: Ack, view: dict, update: Update):
-    print("Save")
-    print(view)
-
-
-ws = WorkflowStep(
+app.step(WorkflowStep(
     callback_id="remind_to_share_updates",
-    edit=workflow_step_edit_edit,
-    save=workflow_step_edit_save,
-    execute=workflow_step_edit_execute,
-)
+    edit=reminder_wf_step_edit_handler,
+    save=reminder_wf_step_save_handler,
+    execute=reminder_wf_step_execute_handler,
+))
 
-app.step(ws)
+app.step(WorkflowStep(
+    callback_id="publish_status_updates_report",
+    edit=publish_updates_wf_step_edit_handler,
+    save=publish_updates_wf_step_save_handler,
+    execute=publish_updates_wf_step_execute_handler,
+))
+
+app.step(WorkflowStep(
+    callback_id="email_status_updates_report",
+    edit=email_updates_wf_step_edit_handler,
+    save=email_updates_wf_step_save_handler,
+    execute=email_updates_wf_step_execute_handler,
+))
 
 if __name__ == "__main__":
     handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])

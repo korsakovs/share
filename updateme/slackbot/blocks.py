@@ -2,10 +2,11 @@ from datetime import date
 from typing import List, Optional
 from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Option, StaticSelectElement, \
     PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject, HeaderBlock, DividerBlock, \
-    ContextBlock, MarkdownTextObject, PlainTextObject
+    ContextBlock, MarkdownTextObject, PlainTextObject, OverflowMenuElement
 
-from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate
-from updateme.slackbot.utils import es
+from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate, \
+    StatusUpdateReaction, Department
+from updateme.slackbot.utils import es, teams_selector_option_groups, join_names_with_commas
 
 
 def home_page_actions_block(selected: str = "my_updates") -> ActionsBlock:
@@ -31,12 +32,20 @@ def home_page_actions_block(selected: str = "my_updates") -> ActionsBlock:
 
 
 def home_page_status_update_filters(teams: List[Team], projects: List[Project], active_team: Team = None,
-                                    active_project: Project = None):
+                                    active_department: Department = None, active_project: Project = None) \
+        -> ActionsBlock:
     all_teams_option = Option(value="__all__", label="All teams")
     all_projects_option = Option(value="__all__", label="All projects")
 
-    active_team_option = all_teams_option if active_team is None or active_team.uuid not in [t.uuid for t in teams] \
-        else Option(value=active_team.uuid, label=active_team.name)
+    team_option_groups = teams_selector_option_groups(teams, add_department_as_team=True, all_teams_value="__all__",
+                                                      all_teams_label="All teams")
+    active_team_option = all_teams_option
+    for option_group in team_option_groups:
+        for option in option_group.options:
+            if (active_team and active_team.uuid == option.value) \
+                    or (active_department and active_department.uuid == option.value):
+                active_team_option = option
+
     active_project_option = all_projects_option if active_project is None \
         or active_project.uuid not in [p.uuid for p in projects] \
         else Option(value=active_project.uuid, label=active_project.name)
@@ -47,10 +56,7 @@ def home_page_status_update_filters(teams: List[Team], projects: List[Project], 
             StaticSelectElement(
                 action_id="home_page_select_team_filter_changed",
                 initial_option=active_team_option,
-                options=[
-                    all_teams_option,
-                    *[Option(value=team.uuid, label=team.name) for team in teams],
-                ]
+                option_groups=team_option_groups,
             ),
             StaticSelectElement(
                 action_id="home_page_select_project_filter_changed",
@@ -130,10 +136,11 @@ def status_update_teams_block(status_update_teams: List[Team], label: str = "Pic
         accessory=StaticMultiSelectElement(
             action_id=action_id,
             placeholder=select_text,
-            options=[
-                team_as_option(team) for team in sorted(status_update_teams, key=lambda team: team.name)
-                if not team.deleted
-            ],
+            option_groups=teams_selector_option_groups(status_update_teams),
+            # options=[
+            #     team_as_option(team) for team in sorted(status_update_teams, key=lambda team: team.name)
+            #     if not team.deleted
+            # ],
             initial_options=selected_options
         )
     )
@@ -190,7 +197,8 @@ def status_update_preview_back_to_editing_block() -> ActionsBlock:
     )
 
 
-def status_update_blocks(status_update: StatusUpdate) -> List[SectionBlock]:
+def status_update_blocks(status_update: StatusUpdate, status_update_reactions: List[StatusUpdateReaction] = None) \
+        -> List[SectionBlock]:
     result = []
     title = ""
     if status_update.type:
@@ -222,9 +230,22 @@ def status_update_blocks(status_update: StatusUpdate) -> List[SectionBlock]:
         ))
 
     if status_update.rich_text:
-        result.append(SectionBlock(text=MarkdownTextObject(text=text)))
+        text_object = MarkdownTextObject(text=text)
     else:
-        result.append(SectionBlock(text=PlainTextObject(text=text, emoji=True)))
+        text_object = PlainTextObject(text=text)
+
+    if status_update_reactions:
+        accessory = OverflowMenuElement(
+            options=[Option(label=reaction.emoji + " " + reaction.name, value=reaction.uuid)
+                     for reaction in status_update_reactions]
+        )
+    else:
+        accessory = None
+
+    result.append(SectionBlock(
+        text=text_object,
+        accessory=accessory
+    ))
 
     if attachments_text:
         result.append(SectionBlock(
@@ -244,13 +265,10 @@ def status_update_blocks(status_update: StatusUpdate) -> List[SectionBlock]:
         published_by_text += "From "
 
     if status_update.teams:
-        if len(status_update.teams) == 1:
-            published_by_text += "*" + es(status_update.teams[0].name) + "*" + " team"
-        else:
-            published_by_text += ", ".join("*" + es(team.name) + "*" for team in status_update.teams[:-1])
-            if len(status_update.teams) > 2:
-                published_by_text += ","
-            published_by_text += " and *" + es(status_update.teams[-1].name) + "*" + " teams"
+        published_by_text += join_names_with_commas([team.name for team in status_update.teams], bold=True)
+        published_by_text += " team"
+        if len(status_update.teams) > 1:
+            published_by_text += "s"
 
     if published_by_text:
         result.append(ContextBlock(
@@ -265,7 +283,8 @@ def status_update_blocks(status_update: StatusUpdate) -> List[SectionBlock]:
     return result
 
 
-def status_update_list_blocks(status_updates: List[StatusUpdate]) -> List[SectionBlock]:
+def status_update_list_blocks(status_updates: List[StatusUpdate],
+                              status_update_reactions: List[StatusUpdateReaction] = None) -> List[SectionBlock]:
     result = []
     last_date: Optional[date] = None
     for status_update in status_updates:
@@ -276,6 +295,6 @@ def status_update_list_blocks(status_updates: List[StatusUpdate]) -> List[Sectio
             ))
             result.append(DividerBlock())
 
-        result.extend(status_update_blocks(status_update))
+        result.extend(status_update_blocks(status_update, status_update_reactions))
         result.append(DividerBlock())
     return result
