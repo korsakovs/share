@@ -19,9 +19,10 @@ def status_update_from_message(body) -> StatusUpdate:
         images = []
     return StatusUpdate(
         text=text,
-        rich_text=True,
+        is_markdown=True,
         source=StatusUpdateSource.SLACK_MESSAGE,
         author_slack_user_id=body["event"]["user"],
+        author_slack_user_name=None,
         images=[StatusUpdateImage(
             url=image["url_private"],
             filename=image["name"],

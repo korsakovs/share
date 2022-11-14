@@ -77,8 +77,9 @@ class StatusUpdate:
     published: bool = False
     deleted: bool = False
 
-    rich_text: bool = False
+    is_markdown: bool = False
     author_slack_user_id: Optional[str] = None
+    author_slack_user_name: Optional[str] = None
 
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.utcnow)

@@ -5,6 +5,7 @@ from slack_sdk.models.blocks import OptionGroup, Option
 
 from updateme.core import dao
 from updateme.core.model import SlackUserPreferences, Team
+from updateme.core.utils import join_strings_with_commas
 
 
 def escape_string(s: str) -> str:
@@ -20,18 +21,7 @@ def join_names_with_commas(names: List[str], bold: bool = False) -> str:
     else:
         names = [es(name) for name in names]
 
-    if not names:
-        return ""
-
-    if len(names) == 1:
-        return names[0]
-
-    result = ", ".join(names[:-1])
-    if len(names) > 2:
-        result += ","
-    result += " and " + names[-1]
-
-    return result
+    return join_strings_with_commas(names)
 
 
 def get_or_create_slack_user_preferences(user_id: str) -> SlackUserPreferences:

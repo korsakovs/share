@@ -1,6 +1,9 @@
 import os
 import logging
 
+from functools import lru_cache
+from typing import Optional
+
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_bolt.workflows.step import WorkflowStep
@@ -25,6 +28,21 @@ from updateme.slackbot.workflows.remider import reminder_wf_step_edit_handler, r
 
 logging.basicConfig(level=logging.DEBUG)
 app = App(token=os.getenv("SLACK_BOT_TOKEN", "<wrong_token>"))
+
+
+@lru_cache(maxsize=16)
+def get_user_name(slack_user_id: str) -> Optional[str]:
+    # TODO: Replace lru_cache with timed lru_cache
+    profile = app.client.users_profile_get(user=slack_user_id)
+    profile = profile.data["profile"]
+
+    try:
+        return profile["display_name"]
+    except (KeyError, TypeError):
+        try:
+            return profile["real_name"]
+        except (KeyError, TypeError):
+            pass
 
 
 @app.action(STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID)
@@ -77,7 +95,7 @@ def home_page_my_updates_button_click_handler(ack, body, logger):
     user_id = body["user"]["id"]
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_preferences.active_tab = "my_updates"
-    dao.insert_status_update(user_preferences)
+    dao.insert_slack_user_preferences(user_preferences)
     try:
         app.client.views_publish(
             user_id=user_id,
@@ -163,6 +181,9 @@ def share_status_update_button_click_handler(ack, body, logger):
 def status_update_preview_button_click_handler(ack, body, logger):
     ack()
     status_update = retrieve_status_update_from_view(body)
+    display_name = get_user_name(status_update.author_slack_user_id)
+    if display_name:
+        status_update.author_slack_user_name = display_name
     dao.insert_status_update(status_update)
 
     try:
@@ -198,6 +219,9 @@ def status_update_preview_share_button_click_handler(ack, body, logger):
 @app.event("message")
 def message_event_handler(body, logger):
     status_update = status_update_from_message(body)
+    display_name = get_user_name(status_update.author_slack_user_id)
+    if display_name:
+        status_update.author_slack_user_name = display_name
     status_update.published = False
     dao.insert_status_update(status_update)
 

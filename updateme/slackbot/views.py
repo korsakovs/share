@@ -56,6 +56,7 @@ def retrieve_private_metadata_from_view(body) -> PrivateMetadata:
 def retrieve_status_update_from_view(body) -> StatusUpdate:
     values = body["view"]["state"]["values"]
     user_id = body["user"]["id"]
+    user_name = body["user"]["name"]
     private_metadata = retrieve_private_metadata_from_view(body)
 
     selected_type = values[STATUS_UPDATE_TYPE_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID][
@@ -92,6 +93,7 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
         projects=projects,
         text=values[STATUS_UPDATE_TEXT_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TEXT_ACTION_ID]["value"],
         author_slack_user_id=user_id,
+        author_slack_user_name=user_name,
         **kwargs
     )
 

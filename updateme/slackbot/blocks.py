@@ -229,7 +229,7 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
             )
         ))
 
-    if status_update.rich_text:
+    if status_update.is_markdown:
         text_object = MarkdownTextObject(text=text)
     else:
         text_object = PlainTextObject(text=text)
