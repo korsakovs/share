@@ -1,8 +1,11 @@
 INITIAL_TEAM_NAMES = {
     "R&D": [
-        "iOS SDK",
-        "Android SDK",
-        "Backend"
+        "Mobile",
+        "Backend",
+        "Data Lake"
+    ],
+    "Research": [
+        "Applied Science",
     ],
     "Product Support": [
         "EMEA",
@@ -18,7 +21,8 @@ INITIAL_TEAM_NAMES = {
 
 INITIAL_PROJECT_NAMES = [
     "Alpha Project",
-    "iOS SDK Release"
+    "SDK Release",
+    "ML Pipeline v2",
 ]
 
 
