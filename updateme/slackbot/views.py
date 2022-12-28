@@ -7,7 +7,7 @@ from slack_sdk.models.views import View
 from updateme.slackbot.blocks import status_update_type_block, status_update_emoji_block, status_update_teams_block, \
     status_update_projects_block, status_update_text_block, \
     status_update_preview_back_to_editing_block, status_update_list_blocks, home_page_actions_block, \
-    home_page_status_update_filters, status_update_blocks
+    home_page_status_update_filters, status_update_blocks, status_update_discuss_link_block
 from updateme.core import dao
 from updateme.core.model import StatusUpdate, Project, Team, StatusUpdateSource, Department
 
@@ -22,6 +22,9 @@ STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID = "status_update_modal__status
 
 STATUS_UPDATE_PROJECTS_BLOCK = "status_update_projects_block"
 STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID = "status_update_modal__status_update_projects_action_id"
+
+STATUS_UPDATE_DISCUSS_LINK_BLOCK = "status_update_discuss_link_block"
+STATUS_UPDATE_MODAL_STATUS_UPDATE_DISCUSS_LINK_ACTION_ID = "status_update_modal__status_update_discuss_link_action_id"
 
 STATUS_UPDATE_TEXT_BLOCK = "status_update_text_block"
 STATUS_UPDATE_MODAL_STATUS_UPDATE_TEXT_ACTION_ID = "status_update_modal__status_update_text_action_id"
@@ -81,6 +84,12 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
     if selected_projects is not None:
         projects = [dao.read_project(selected_project["value"]) for selected_project in selected_projects]
 
+    try:
+        discuss_link = values[STATUS_UPDATE_DISCUSS_LINK_BLOCK][
+            STATUS_UPDATE_MODAL_STATUS_UPDATE_DISCUSS_LINK_ACTION_ID]["value"]
+    except (KeyError, TypeError):
+        discuss_link = None
+
     kwargs = dict()
     if private_metadata and private_metadata.status_update_uuid:
         kwargs["uuid"] = private_metadata.status_update_uuid
@@ -92,6 +101,7 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
         teams=teams,
         projects=projects,
         text=values[STATUS_UPDATE_TEXT_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TEXT_ACTION_ID]["value"],
+        discuss_link=discuss_link,
         author_slack_user_id=user_id,
         author_slack_user_name=user_name,
         **kwargs
@@ -129,7 +139,6 @@ def status_update_dialog_view(state: StatusUpdate = None) -> View:
         close="Cancel",
         private_metadata=str(PrivateMetadata(status_update_uuid=None if state is None else state.uuid)),
         blocks=[
-            DividerBlock(),
             status_update_type_block(dao.read_status_update_types(),
                                      selected_value=None if state is None or state.type is None else state.type,
                                      block_id=STATUS_UPDATE_TYPE_BLOCK,
@@ -148,6 +157,9 @@ def status_update_dialog_view(state: StatusUpdate = None) -> View:
                                          else [project for project in state.projects],
                                          block_id=STATUS_UPDATE_PROJECTS_BLOCK,
                                          action_id=STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID),
+            status_update_discuss_link_block(initial_value=None if state is None else state.discuss_link,
+                                             block_id=STATUS_UPDATE_DISCUSS_LINK_BLOCK,
+                                             action_id=STATUS_UPDATE_MODAL_STATUS_UPDATE_DISCUSS_LINK_ACTION_ID),
             status_update_text_block(initial_value=None if state is None else state.text,
                                      block_id=STATUS_UPDATE_TEXT_BLOCK,
                                      action_id=STATUS_UPDATE_MODAL_STATUS_UPDATE_TEXT_ACTION_ID),

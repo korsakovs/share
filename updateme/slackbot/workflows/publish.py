@@ -4,7 +4,7 @@ from slack_sdk import WebClient
 from slack_sdk.models.blocks import InputBlock, UserMultiSelectElement,  StaticMultiSelectElement, Option
 
 from updateme.core import dao
-from updateme.slackbot import teams_selector_option_groups
+from updateme.slackbot.utils import teams_selector_option_groups
 
 
 def publish_updates_wf_step_edit_handler(ack: Ack, step, configure: Configure):

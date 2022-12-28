@@ -73,6 +73,7 @@ class StatusUpdate:
 
     type: Optional[StatusUpdateType] = None
     emoji: Optional[StatusUpdateEmoji] = None
+    discuss_link: Optional[str] = None
 
     published: bool = False
     deleted: bool = False

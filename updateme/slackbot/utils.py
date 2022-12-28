@@ -39,7 +39,8 @@ def teams_selector_option_groups(teams: List[Team], add_department_as_team: bool
     result = []
 
     if all_teams_value and all_teams_label:
-        result.append(OptionGroup(label="All teams", options=[Option(label=all_teams_label, value=all_teams_value)]))
+        result.append(OptionGroup(label=all_teams_label,
+                                  options=[Option(label=all_teams_label, value=all_teams_value)]))
 
     for _, _g_teams in itertools.groupby(teams, key=lambda team_: (team_.department.name, team_.department.uuid)):
         grouped_teams = list(_g_teams)

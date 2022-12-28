@@ -2,7 +2,7 @@ from datetime import date
 from typing import List, Optional
 from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Option, StaticSelectElement, \
     PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject, HeaderBlock, DividerBlock, \
-    ContextBlock, MarkdownTextObject, PlainTextObject, OverflowMenuElement
+    ContextBlock, MarkdownTextObject, PlainTextObject, OverflowMenuElement, UrlInputElement
 
 from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate, \
     StatusUpdateReaction, Department
@@ -116,7 +116,8 @@ def status_update_emoji_block(status_update_emojis: List[StatusUpdateEmoji],
                 emoji_as_option(status_update_emoji)
                 for status_update_emoji in status_update_emojis if not status_update_emoji.deleted
             ]],
-            initial_option=selected_value
+            initial_option=selected_value,
+            focus_on_load=False
         )
     )
 
@@ -137,11 +138,8 @@ def status_update_teams_block(status_update_teams: List[Team], label: str = "Pic
             action_id=action_id,
             placeholder=select_text,
             option_groups=teams_selector_option_groups(status_update_teams),
-            # options=[
-            #     team_as_option(team) for team in sorted(status_update_teams, key=lambda team: team.name)
-            #     if not team.deleted
-            # ],
-            initial_options=selected_options
+            initial_options=selected_options,
+            focus_on_load=False
         )
     )
 
@@ -166,7 +164,22 @@ def status_update_projects_block(status_update_projects: List[Project],
                 project_as_option(project)
                 for project in sorted(status_update_projects, key=lambda project: project.name) if not project.deleted
             ],
-            initial_options=selected_options
+            initial_options=selected_options,
+            focus_on_load=False
+        )
+    )
+
+
+def status_update_discuss_link_block(label: str = "Link to a discussion", initial_value: str = None,
+                                     block_id: str = None, action_id: str = None) -> InputBlock:
+    return InputBlock(
+        block_id=block_id,
+        label=label,
+        optional=True,
+        element=UrlInputElement(
+            action_id=action_id,
+            initial_value=initial_value,
+            focus_on_load=False
         )
     )
 
@@ -176,6 +189,7 @@ def status_update_text_block(label: str = "Status Update", initial_value: str = 
     return InputBlock(
         block_id=block_id,
         label=label,
+        optional=False,
         element=PlainTextInputElement(
             action_id=action_id,
             multiline=True,

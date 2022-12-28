@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from updateme.core import dao
 from updateme.email.client import obtain_token_info, get_labels, credentials_filename, TEST_EMAIL_FROM, \
@@ -17,5 +18,5 @@ if __name__ == "__main__":
     )
     message["To"] = TEST_EMAIL_TO
     message["From"] = f"Share!<{TEST_EMAIL_FROM}>"
-    message["Subject"] = "Test Message from Share App Bot"
+    message["Subject"] = f"Share! digest from {datetime.utcnow().strftime('%A, %B %-d')}"
     send_message(message)

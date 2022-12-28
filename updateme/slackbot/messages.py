@@ -6,7 +6,7 @@ from slack_sdk.models.blocks import Block, HeaderBlock, DividerBlock, ActionsBlo
 from updateme.core import dao
 from updateme.core.model import StatusUpdate, StatusUpdateSource, StatusUpdateImage
 from updateme.slackbot.blocks import status_update_blocks, status_update_teams_block, status_update_projects_block, \
-    status_update_type_block
+    status_update_type_block, status_update_discuss_link_block
 
 
 def status_update_from_message(body) -> StatusUpdate:
@@ -66,6 +66,11 @@ def status_update_preview_message(status_update: StatusUpdate) -> List[Block]:
             action_id="status_update_message_preview_project_selected",
             status_update_projects=dao.read_projects(),
             selected_options=status_update.projects
+        ),
+        status_update_discuss_link_block(
+            block_id="status_update_preview_discuss_link",
+            action_id="status_update_message_preview_discuss_link_updated",
+            initial_value=status_update.discuss_link
         ),
     ]
     if status_update.deleted:

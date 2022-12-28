@@ -4,7 +4,7 @@ from slack_sdk import WebClient
 from slack_sdk.models.blocks import InputBlock, EmailInputElement, PlainTextObject, StaticMultiSelectElement, Option
 
 from updateme.core import dao
-from updateme.slackbot import teams_selector_option_groups
+from updateme.slackbot.utils import teams_selector_option_groups
 
 
 def email_updates_wf_step_edit_handler(ack: Ack, step, configure: Configure):
