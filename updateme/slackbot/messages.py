@@ -17,8 +17,13 @@ def status_update_from_message(body) -> StatusUpdate:
         images = [file for file in files if file["filetype"] in ("jpg", "png", "gif")]
     else:
         images = []
+    try:
+        company = dao.read_companies(slack_team_id=body["team_id"])[0]
+    except IndexError:
+        raise IndexError(f"Can not find company with slack_team_id = {body['team_id']}") from None
     return StatusUpdate(
         text=text,
+        company=company,
         is_markdown=True,
         source=StatusUpdateSource.SLACK_MESSAGE,
         author_slack_user_id=body["event"]["user"],

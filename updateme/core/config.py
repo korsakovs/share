@@ -34,7 +34,7 @@ class DaoType(Enum):
     POSTGRES = 2
 
 
-def get_active_dao_type(default=DaoType.SQLITE) -> DaoType:
+def get_active_dao_type(default=DaoType.POSTGRES) -> DaoType:
     try:
         return DaoType[os.getenv("UPDATE_ME_DAO", "").upper().strip()]
     except KeyError:
@@ -66,20 +66,6 @@ PROJECT_NAMES = [
     "Alpha Project",
     "SDK Release",
     "ML Pipeline v2",
-]
-
-
-STATUS_UPDATE_EMOJIS = [
-    ("🪪", "Document"),
-    ("🚀", "Rocket / Launch"),
-    ("⚖️", "Decision"),
-    ("🎆️", "Fireworks"),
-    ("🎉", "Party Popper"),
-    ("🥳", "Partying Face"),
-    ("❓", "Red Question Mark"),
-    ("📈", "Chart Increasing"),
-    ("📉", "Chart Decreasing"),
-    ("🔒", "Locked")
 ]
 
 

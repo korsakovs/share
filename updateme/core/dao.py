@@ -20,10 +20,10 @@ from typing import List, Optional, Generator
 
 from sqlalchemy.pool import NullPool
 
-from updateme.core.model import Project, StatusUpdate, StatusUpdateType, Team, StatusUpdateEmoji, \
-    SlackUserPreferences, StatusUpdateImage, StatusUpdateSource, StatusUpdateReaction, Department
-from updateme.core.config import TEAM_NAMES, PROJECT_NAMES, STATUS_UPDATE_EMOJIS, \
-    STATUS_UPDATE_TYPES, REACTIONS, get_active_dao_type, DaoType
+from updateme.core.model import Company, Project, StatusUpdate, StatusUpdateType, Team, SlackUserPreferences, \
+    StatusUpdateImage, StatusUpdateSource, StatusUpdateReaction, Department
+from updateme.core.config import TEAM_NAMES, PROJECT_NAMES, STATUS_UPDATE_TYPES, REACTIONS, get_active_dao_type, \
+    DaoType
 
 
 class Dao(ABC):
@@ -56,13 +56,28 @@ class Dao(ABC):
                             last_n: int = None, source: StatusUpdateSource = None) -> List[StatusUpdate]: ...
 
     @abstractmethod
+    def delete_team_status_updates(self, team_uuid: str): ...
+
+    @abstractmethod
     def insert_team(self, team: Team): ...
 
     @abstractmethod
     def read_team(self, uuid: str) -> Optional[Team]: ...
 
     @abstractmethod
-    def read_teams(self, team_name: str = None) -> List[Team]: ...
+    def read_teams(self, team_name: str = None, department_uuid: str = None) -> List[Team]: ...
+
+    @abstractmethod
+    def delete_team(self, uuid: str): ...
+
+    @abstractmethod
+    def insert_company(self, company: Company): ...
+
+    @abstractmethod
+    def read_company(self, uuid: str) -> Optional[Company]: ...
+
+    @abstractmethod
+    def read_companies(self, company_name: str = None, slack_team_id: str = None) -> List[Company]: ...
 
     @abstractmethod
     def insert_department(self, department: Department): ...
@@ -72,6 +87,9 @@ class Dao(ABC):
 
     @abstractmethod
     def read_departments(self, department_name: str = None) -> List[Department]: ...
+
+    @abstractmethod
+    def delete_department(self, uuid: str): ...
 
     @abstractmethod
     def insert_project(self, project: Project): ...
@@ -92,15 +110,6 @@ class Dao(ABC):
     def read_status_update_types(self) -> List[StatusUpdateType]: ...
 
     @abstractmethod
-    def insert_status_update_emoji(self, status_update_emoji: StatusUpdateEmoji): ...
-
-    @abstractmethod
-    def read_status_update_emoji(self, uuid: str) -> Optional[StatusUpdateEmoji]: ...
-
-    @abstractmethod
-    def read_status_update_emojis(self) -> List[StatusUpdateEmoji]: ...
-
-    @abstractmethod
     def read_slack_user_preferences(self, user_id: str) -> Optional[SlackUserPreferences]: ...
 
     @abstractmethod
@@ -114,12 +123,12 @@ class Dao(ABC):
 
 
 class SQLAlchemyDao(Dao, ABC):
+    _COMPANIES_TABLE = "companies"
     _TEAMS_TABLE = "teams"
     _DEPARTMENTS_TABLE = "departments"
     _STATUS_UPDATES_TABLE = "status_updates"
     _PROJECTS_TABLE = "projects"
     _STATUS_UPDATE_TYPES_TABLE = "status_update_types"
-    _STATUS_UPDATE_EMOJIS_TABLE = "status_update_emojis"
     _STATUS_UPDATE_REACTIONS_TABLE = "status_update_reactions"
     _STATUS_UPDATE_IMAGES_TABLE = "status_update_images"
     _SLACK_USER_PREFERENCES_TABLE = "slack_user_preferences"
@@ -128,15 +137,23 @@ class SQLAlchemyDao(Dao, ABC):
     def _create_engine(self) -> Engine: ...
 
     def __init__(self):
-        self._engine = self._create_engine()
         self._mapper_registry = registry()
-        self._metadata_obj = MetaData(bind=self._engine)
+        self._metadata_obj = MetaData()
+
+        self._companies_table = Table(
+            self._COMPANIES_TABLE,
+            self._metadata_obj,
+            Column("uuid", String(256), primary_key=True, nullable=False),
+            Column("slack_team_id", String(256), nullable=False, unique=True, index=True),
+        )
 
         self._departments_table = Table(
             self._DEPARTMENTS_TABLE,
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("name", String(256), nullable=False),
+            Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False,
+                   index=True),
             Column("deleted", Boolean, nullable=False),
         )
 
@@ -153,6 +170,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._PROJECTS_TABLE,
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
+            Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
             Column("name", String(256), nullable=False),
             Column("deleted", Boolean, nullable=False),
         )
@@ -162,16 +180,8 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("name", String(256), nullable=False),
+            Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
             Column("emoji", String(256)),
-            Column("deleted", Boolean, nullable=False),
-        )
-
-        self._status_update_emojis_table = Table(
-            self._STATUS_UPDATE_EMOJIS_TABLE,
-            self._metadata_obj,
-            Column("uuid", String(256), primary_key=True, nullable=False),
-            Column("emoji", String(256), nullable=False),
-            Column("meaning", String(256), nullable=False),
             Column("deleted", Boolean, nullable=False),
         )
 
@@ -179,6 +189,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._STATUS_UPDATE_REACTIONS_TABLE,
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
+            Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
             Column("emoji", String(256), nullable=False),
             Column("name", String(256), nullable=False),
             Column("deleted", Boolean, nullable=False),
@@ -188,6 +199,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._STATUS_UPDATES_TABLE,
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
+            Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
             Column("source", Enum(StatusUpdateSource), nullable=False),
             Column("discuss_link", String(1024), nullable=True),
             Column("published", Boolean, nullable=False),
@@ -198,7 +210,6 @@ class SQLAlchemyDao(Dao, ABC):
             Column("author_slack_user_name", String(256), nullable=True),
             Column("created_at", DateTime, nullable=False),
             Column("status_update_type_uuid", String(256), ForeignKey(f"{self._STATUS_UPDATE_TYPES_TABLE}.uuid")),
-            Column("status_update_emoji_uuid", String(256), ForeignKey(f"{self._STATUS_UPDATE_EMOJIS_TABLE}.uuid")),
         )
 
         self._status_update_projects_association_table = Table(
@@ -220,6 +231,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("user_id", String(256), primary_key=True, nullable=False),
             Column("active_tab", String(256), nullable=True),
+            Column("active_configuration_tab", String(256), nullable=True),
             Column("active_team_filter__team_uuid", String(256), ForeignKey(f"{self._TEAMS_TABLE}.uuid"),
                    nullable=True),
             Column("active_department_filter__department_uuid", String(256),
@@ -239,22 +251,30 @@ class SQLAlchemyDao(Dao, ABC):
             Column("description", String(1024), nullable=True),
         )
 
-        self._mapper_registry.map_imperatively(Department, self._departments_table)
-        self._mapper_registry.map_imperatively(Team, self._teams_table, properties={
-            "department": relationship(Department)
+        self._mapper_registry.map_imperatively(Company, self._companies_table)
+        self._mapper_registry.map_imperatively(Department, self._departments_table, properties={
+            "company": relationship(Company)
         })
-        self._mapper_registry.map_imperatively(Project, self._projects_table)
-        self._mapper_registry.map_imperatively(StatusUpdateType, self._status_update_types_table)
-        self._mapper_registry.map_imperatively(StatusUpdateEmoji, self._status_update_emojis_table)
-        self._mapper_registry.map_imperatively(StatusUpdateReaction, self._status_update_reactions_table)
-        self._mapper_registry.map_imperatively(StatusUpdateImage, self._status_update_images_table)
+        self._mapper_registry.map_imperatively(Team, self._teams_table, properties={
+            "department": relationship(Department),
+            "company": relationship(Company, secondary=self._departments_table)
+        })
+        self._mapper_registry.map_imperatively(Project, self._projects_table, properties={
+            "company": relationship(Company)
+        })
+        self._mapper_registry.map_imperatively(StatusUpdateType, self._status_update_types_table, properties={
+            "company": relationship(Company)
+        })
+        self._mapper_registry.map_imperatively(StatusUpdateReaction, self._status_update_reactions_table, properties={
+            "company": relationship(Company)
+        })
 
         self._mapper_registry.map_imperatively(
             StatusUpdate,
             self._status_update_table,
             properties={
+                "company": relationship(Company),
                 "type": relationship(StatusUpdateType),
-                "emoji": relationship(StatusUpdateEmoji),
                 "projects": relationship(Project, secondary=self._status_update_projects_association_table,
                                          order_by=self._projects_table.c.name),
                 "teams": relationship(Team, secondary=self._status_update_teams_association_table,
@@ -262,6 +282,10 @@ class SQLAlchemyDao(Dao, ABC):
                 "images": relationship(StatusUpdateImage)
             }
         )
+
+        self._mapper_registry.map_imperatively(StatusUpdateImage, self._status_update_images_table, properties={
+            "company": relationship(Company, secondary=self._status_update_table)
+        })
 
         self._mapper_registry.map_imperatively(
             SlackUserPreferences,
@@ -273,7 +297,8 @@ class SQLAlchemyDao(Dao, ABC):
             }
         )
 
-        self._metadata_obj.create_all(checkfirst=True)
+        self._engine = self._create_engine()
+        self._metadata_obj.create_all(bind=self._engine, checkfirst=True)
         self._session_maker = sessionmaker(bind=self._engine)
         self._session = self._session_maker()
 
@@ -363,17 +388,51 @@ class SQLAlchemyDao(Dao, ABC):
 
             return result.distinct().all()
 
+    def delete_team_status_updates(self, team_uuid: str):
+        with self._get_session() as session:
+            session.query(StatusUpdate).filter(
+                StatusUpdate.uuid.in_(
+                    session.query(StatusUpdate.uuid)
+                        .join(self._status_update_teams_association_table).join(Team).filter(Team.uuid == team_uuid)
+                )
+            ).update({
+                StatusUpdate.deleted: True
+            }, synchronize_session=False)
+
     def insert_team(self, team: Team):
         self._set_obj(team)
 
     def read_team(self, uuid: str) -> Optional[Team]:
         return self._get_obj(Team, uuid)
 
-    def read_teams(self, team_name: str = None) -> List[Team]:
+    def read_teams(self, team_name: str = None, department_uuid: str = None) -> List[Team]:
         with self._get_session() as session:
             result = session.query(Team).filter(Team.deleted == false())
             if team_name is not None:
                 result = result.filter(Team.name == team_name)
+            if department_uuid is not None:
+                result = result.join(Department).filter(Department.uuid == department_uuid)
+            return result.distinct().all()
+
+    def delete_team(self, uuid: str):
+        with self._get_session() as session:
+            session.query(Team).filter(Team.uuid == uuid).update({
+                Team.deleted: True
+            }, synchronize_session=False)
+
+    def insert_company(self, company: Company):
+        self._set_obj(company)
+
+    def read_company(self, uuid: str) -> Optional[Company]:
+        return self._get_obj(Company, uuid)
+
+    def read_companies(self, company_name: str = None, slack_team_id: str = None) -> List[Company]:
+        with self._get_session() as session:
+            result = session.query(Company).filter(Company.deleted == false())
+            if company_name is not None:
+                result = result.filter(Company.name == company_name)
+            if slack_team_id is not None:
+                result = result.filter(Company.slack_team_id == slack_team_id)
             return result.all()
 
     def insert_department(self, department: Department):
@@ -388,6 +447,12 @@ class SQLAlchemyDao(Dao, ABC):
             if department_name is not None:
                 result = result.filter(Department.name == department_name)
             return result.all()
+
+    def delete_department(self, uuid: str):
+        with self._get_session() as session:
+            session.query(Department).filter(Department.uuid == uuid).update({
+                Department.deleted: True
+            }, synchronize_session=False)
 
     def insert_project(self, project: Project):
         self._set_obj(project)
@@ -411,16 +476,6 @@ class SQLAlchemyDao(Dao, ABC):
     def read_status_update_types(self, name: str = None) -> List[StatusUpdateType]:
         with self._get_session() as session:
             return session.query(StatusUpdateType).filter(StatusUpdateType.deleted == false()).all()
-
-    def insert_status_update_emoji(self, status_update_emoji: StatusUpdateEmoji):
-        self._set_obj(status_update_emoji)
-
-    def read_status_update_emoji(self, uuid: str) -> Optional[StatusUpdateEmoji]:
-        return self._get_obj(StatusUpdateEmoji, uuid)
-
-    def read_status_update_emojis(self) -> List[StatusUpdateEmoji]:
-        with self._get_session() as session:
-            return session.query(StatusUpdateEmoji).filter(StatusUpdateEmoji.deleted == false()).all()
 
     def read_slack_user_preferences(self, user_id: str) -> Optional[SlackUserPreferences]:
         return self._get_obj(SlackUserPreferences, user_id)
@@ -455,19 +510,33 @@ class SQLiteDao(SQLAlchemyDao):
         return create_engine(f"sqlite:///{self._db_file}", echo=False, poolclass=NullPool)
 
 
-if get_active_dao_type() == DaoType.SQLITE:
+class PostgresDao(SQLAlchemyDao):
+    CONN_PYTEST_STRING = "postgresql://localhost:5432/shareit_test"
+    CONN_STRING = "postgresql://localhost:5432/shareit_prod"
+
+    def _create_engine(self) -> Engine:
+        conn_string = self.CONN_STRING if "pytest" not in sys.modules else self.CONN_PYTEST_STRING
+        print(conn_string)
+        return create_engine(conn_string)
+
+
+if get_active_dao_type() == DaoType.POSTGRES:
+    dao = PostgresDao()
+elif get_active_dao_type() == DaoType.SQLITE:
     dao = SQLiteDao()
 else:
     raise TypeError(f"DAO {get_active_dao_type().name} is not supported")
 
 
 def create_initial_data():
+    company = Company("Test Company", "test_slack_id")
+
     for department_name, team_names in TEAM_NAMES.items():
         departments = dao.read_departments(department_name)
         if departments:
             department = departments[0]
         else:
-            department = Department(name=department_name)
+            department = Department(name=department_name, company=company)
             dao.insert_department(department)
 
         for team_name in team_names:
@@ -481,17 +550,7 @@ def create_initial_data():
     existing_project_names = [p.name for p in dao.read_projects()]
     for project_name in set(PROJECT_NAMES):
         if project_name not in existing_project_names:
-            dao.insert_project(Project(project_name))
-
-    existing_emojis = dao.read_status_update_emojis()
-    for emoji, meaning in STATUS_UPDATE_EMOJIS:
-        for existing_emoji in existing_emojis:
-            if existing_emoji.emoji == emoji and existing_emoji.meaning == meaning:
-                break
-        else:
-            new_status_update_type = StatusUpdateEmoji(emoji, meaning)
-            dao.insert_status_update_emoji(new_status_update_type)
-            existing_emojis.append(new_status_update_type)
+            dao.insert_project(Project(project_name, company=company))
 
     existing_status_update_types = dao.read_status_update_types()
     for name, emoji in STATUS_UPDATE_TYPES:
@@ -499,7 +558,7 @@ def create_initial_data():
             if status_update_type_.name == name and status_update_type_.emoji == emoji:
                 break
         else:
-            new_status_update_type = StatusUpdateType(name, emoji)
+            new_status_update_type = StatusUpdateType(name, emoji, company=company)
             dao.insert_status_update_type(new_status_update_type)
             existing_status_update_types.append(new_status_update_type)
 
@@ -509,7 +568,7 @@ def create_initial_data():
             if existing_initial_reaction.name == name and existing_initial_reaction.emoji == emoji:
                 break
         else:
-            new_status_update_reaction = StatusUpdateReaction(emoji, name)
+            new_status_update_reaction = StatusUpdateReaction(emoji, name, company=company)
             dao.insert_status_update_reaction(new_status_update_reaction)
             existing_initial_reactions.append(new_status_update_reaction)
 

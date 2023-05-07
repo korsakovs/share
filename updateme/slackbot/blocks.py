@@ -4,31 +4,53 @@ from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Opti
     PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject, HeaderBlock, DividerBlock, \
     ContextBlock, MarkdownTextObject, PlainTextObject, OverflowMenuElement, UrlInputElement
 
-from updateme.core.model import StatusUpdateType, StatusUpdateEmoji, Team, Project, StatusUpdate, \
-    StatusUpdateReaction, Department
+from updateme.core.model import StatusUpdateType, Team, Project, StatusUpdate, StatusUpdateReaction, Department
 from updateme.slackbot.utils import es, teams_selector_option_groups, join_names_with_commas
 
 
-def home_page_actions_block(selected: str = "my_updates") -> ActionsBlock:
-    return ActionsBlock(
-        elements=[
-            ButtonElement(
-                text="Share a status update",
-                style="danger",
-                action_id="share_status_update_button_clicked"
-            ),
-            ButtonElement(
-                text="My Updates",
-                style="primary" if selected == "my_updates" else None,
-                action_id="home_page_my_updates_button_clicked"
-            ),
-            ButtonElement(
-                text="Company Updates",
-                style="primary" if selected == "company_updates" else None,
-                action_id="home_page_company_updates_button_clicked"
-            ),
-        ]
-    )
+def home_page_actions_block(selected: str = "my_updates", show_configuration: bool = False) -> ActionsBlock:
+    elements = [
+        ButtonElement(
+            text="Share a status update",
+            style="danger",
+            action_id="share_status_update_button_clicked"
+        ),
+        ButtonElement(
+            text="My Updates",
+            style="primary" if selected == "my_updates" else None,
+            action_id="home_page_my_updates_button_clicked"
+        ),
+        ButtonElement(
+            text="Company Updates",
+            style="primary" if selected == "company_updates" else None,
+            action_id="home_page_company_updates_button_clicked"
+        ),
+    ]
+    if show_configuration:
+        elements.append(ButtonElement(
+            text="Configuration",
+            style="primary" if selected == "configuration" else None,
+            action_id="home_page_configuration_button_clicked"
+        ))
+
+    return ActionsBlock(elements=elements)
+
+
+def home_page_configuration_actions_block(selected: str = "departments") -> ActionsBlock:
+    elements = [
+        ButtonElement(
+            text="Departments",
+            style="primary" if selected == "departments" else None,
+            action_id="configuration_departments_button_clicked"
+        ),
+        ButtonElement(
+            text="Teams",
+            style="primary" if selected == "teams" else None,
+            action_id="configuration_teams_button_clicked"
+        ),
+    ]
+
+    return ActionsBlock(elements=elements)
 
 
 def home_page_status_update_filters(teams: List[Team], projects: List[Project], active_team: Team = None,
@@ -90,32 +112,6 @@ def status_update_type_block(status_update_groups: List[StatusUpdateType],
                 type_as_option(status_update_group)
                 for status_update_group in status_update_groups if not status_update_group.deleted
             ],
-            initial_option=selected_value,
-            focus_on_load=False
-        )
-    )
-
-
-def status_update_emoji_block(status_update_emojis: List[StatusUpdateEmoji],
-                              label: str = "Select emoji for your status update: ", select_text: str = "Select Emoji",
-                              selected_value: StatusUpdateEmoji = None, block_id: str = None,
-                              action_id: str = None) -> SectionBlock:
-    def emoji_as_option(emoji: StatusUpdateEmoji) -> Option:
-        return Option(value=emoji.uuid, text=f"{emoji.emoji} : {emoji.meaning}")
-
-    if selected_value is not None:
-        selected_value = emoji_as_option(selected_value)
-
-    return SectionBlock(
-        block_id=block_id,
-        text=label,
-        accessory=StaticSelectElement(
-            action_id=action_id,
-            placeholder=select_text,
-            options=[Option(value="<noemoji>", text="no emoji :("), *[
-                emoji_as_option(status_update_emoji)
-                for status_update_emoji in status_update_emojis if not status_update_emoji.deleted
-            ]],
             initial_option=selected_value,
             focus_on_load=False
         )
@@ -222,8 +218,6 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
 
     text = " • "
     text += status_update.text
-    if status_update.emoji:
-        text += " " + status_update.emoji.emoji
 
     attachments_text = ""
     if status_update.images:

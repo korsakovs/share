@@ -1,4 +1,6 @@
-markdown>=3.4.1
-slack_sdk>=3.19.2
-slack_bolt>=1.15.2
-SQLAlchemy>=1.4.44
+cachetools==5.3.0
+markdown==3.4.3
+psycopg2==2.9.6
+slack_sdk==3.21.3
+slack_bolt==1.18.0
+SQLAlchemy==2.0.12
