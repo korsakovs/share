@@ -136,8 +136,8 @@ def status_update_dialog_view(state: StatusUpdate = None) -> View:
     return View(
         type="modal",
         callback_id="status_update_preview_button_clicked",
-        title="Share Status Update",
-        submit="Preview",
+        title="Share Status Update" if not state.published else "Update Status Update",
+        submit="Preview" if not state.published else "Save",
         close="Cancel",
         private_metadata=str(PrivateMetadata(status_update_uuid=None if state is None else state.uuid)),
         blocks=[
@@ -175,14 +175,14 @@ def share_status_update_preview_view(update: StatusUpdate) -> View:
         private_metadata=str(PrivateMetadata(status_update_uuid=update.uuid)),
         blocks=[
             DividerBlock(),
-            *status_update_blocks(update),
+            *status_update_blocks(update, display_edit_buttons=False),
             DividerBlock(),
             status_update_preview_back_to_editing_block(),
         ]
     )
 
 
-def home_page_my_updates_view(author_slack_user_id: str, is_admin: bool = False):
+def home_page_my_updates_view(author_slack_user_id: str, is_admin: bool = False, current_user_slack_id: str = None):
     return View(
         type="home",
         title="Welcome to Chirik Bot!",
@@ -190,13 +190,15 @@ def home_page_my_updates_view(author_slack_user_id: str, is_admin: bool = False)
             home_page_actions_block(selected="my_updates", show_configuration=is_admin),
             DividerBlock(),
             *status_update_list_blocks(dao.read_status_updates(author_slack_user_id=author_slack_user_id, last_n=100),
-                                       dao.read_status_update_reactions())
+                                       dao.read_status_update_reactions(),
+                                       current_user_slack_id=current_user_slack_id,
+                                       accessory_action_id="my_updates_status_message_menu_button_clicked")
         ]
     )
 
 
 def home_page_company_updates_view(team: Team = None, department: Department = None, project: Project = None,
-                                   is_admin: bool = False):
+                                   is_admin: bool = False, current_user_slack_id: str = None):
     kwargs = {}
     if project:
         kwargs["from_projects"] = [project.uuid]
@@ -220,7 +222,9 @@ def home_page_company_updates_view(team: Team = None, department: Department = N
             ),
             DividerBlock(),
             *status_update_list_blocks(dao.read_status_updates(last_n=100, **kwargs),
-                                       dao.read_status_update_reactions())
+                                       dao.read_status_update_reactions(),
+                                       current_user_slack_id=current_user_slack_id,
+                                       accessory_action_id="company_updates_status_message_menu_button_clicked")
         ]
     )
 

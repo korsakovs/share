@@ -88,7 +88,7 @@ def status_update_preview_message(status_update: StatusUpdate) -> List[Block]:
     return [
         HeaderBlock(text="Status Update Preview"),
         DividerBlock(),
-        *status_update_blocks(status_update),
+        *status_update_blocks(status_update, display_edit_buttons=False),
         DividerBlock(),
         *input_blocks,
         suffix_block

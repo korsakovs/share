@@ -172,7 +172,8 @@ def status_update_discuss_link_block(label: str = "Link to a discussion", initia
         block_id=block_id,
         label=label,
         optional=True,
-        element=UrlInputElement(
+        element=PlainTextInputElement(
+            placeholder="https://",
             action_id=action_id,
             initial_value=initial_value,
             focus_on_load=False
@@ -207,7 +208,8 @@ def status_update_preview_back_to_editing_block() -> ActionsBlock:
     )
 
 
-def status_update_blocks(status_update: StatusUpdate, status_update_reactions: List[StatusUpdateReaction] = None) \
+def status_update_blocks(status_update: StatusUpdate, status_update_reactions: List[StatusUpdateReaction] = None,
+                         display_edit_buttons: bool = False, accessory_action_id: str = None) \
         -> List[SectionBlock]:
     result = []
     title = ""
@@ -242,10 +244,22 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
     else:
         text_object = PlainTextObject(text=text)
 
+    menu_options = []
+
     if status_update_reactions:
+        menu_options.extend([Option(label=reaction.emoji + " " + reaction.name, value=reaction.uuid)
+                             for reaction in status_update_reactions])
+
+    if display_edit_buttons:
+        menu_options.extend([
+            Option(label="Edit...", value="edit_" + status_update.uuid),
+            Option(label="Delete...", value="delete_" + status_update.uuid)
+        ])
+
+    if accessory_action_id and menu_options:
         accessory = OverflowMenuElement(
-            options=[Option(label=reaction.emoji + " " + reaction.name, value=reaction.uuid)
-                     for reaction in status_update_reactions]
+            action_id=accessory_action_id,
+            options=menu_options
         )
     else:
         accessory = None
@@ -292,7 +306,9 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
 
 
 def status_update_list_blocks(status_updates: List[StatusUpdate],
-                              status_update_reactions: List[StatusUpdateReaction] = None) -> List[SectionBlock]:
+                              status_update_reactions: List[StatusUpdateReaction] = None,
+                              current_user_slack_id: str = None,
+                              accessory_action_id: str = None) -> List[SectionBlock]:
     result = []
     last_date: Optional[date] = None
     for status_update in status_updates:
@@ -303,6 +319,13 @@ def status_update_list_blocks(status_updates: List[StatusUpdate],
             ))
             result.append(DividerBlock())
 
-        result.extend(status_update_blocks(status_update, status_update_reactions))
+        result.extend(
+            status_update_blocks(
+                status_update,
+                status_update_reactions,
+                display_edit_buttons=status_update.author_slack_user_id == current_user_slack_id,
+                accessory_action_id=accessory_action_id
+            )
+        )
         result.append(DividerBlock())
     return result

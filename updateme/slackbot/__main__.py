@@ -82,13 +82,14 @@ def home_page_open_handler(client: WebClient, event, logger):
     is_admin = user_info and (user_info.is_admin or user_info.is_owner)
 
     if user_preferences.active_tab == "my_updates":
-        view = home_page_my_updates_view(user_id, is_admin=is_admin)
+        view = home_page_my_updates_view(user_id, is_admin=is_admin, current_user_slack_id=user_id)
     elif user_preferences.active_tab == "company_updates":
         view = home_page_company_updates_view(
             team=user_preferences.active_team_filter,
             department=user_preferences.active_department_filter,
             project=user_preferences.active_project_filter,
-            is_admin=is_admin
+            is_admin=is_admin,
+            current_user_slack_id=user_id
         )
     else:
         view = home_page_configuration_departments_view(
@@ -117,10 +118,36 @@ def home_page_my_updates_button_click_handler(ack, body, logger):
     try:
         app.client.views_publish(
             user_id=user_id,
-            view=home_page_my_updates_view(user_id, is_admin=is_admin)
+            view=home_page_my_updates_view(user_id, is_admin=is_admin, current_user_slack_id=user_id)
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("my_updates_status_message_menu_button_clicked")
+def my_updates_status_message_menu_button_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    selected_option_value = str(body["actions"][0]["selected_option"]["value"])
+
+    if selected_option_value.startswith("edit_"):
+        status_update_id = selected_option_value.split("_", maxsplit=1)[1]
+        status_update = dao.read_status_update(status_update_id)
+        if not status_update:
+            logger.error(f"Can not find status update {status_update_id}")
+        else:
+            try:
+                app.client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view=status_update_dialog_view(state=status_update),
+                )
+            except Exception as e:
+                logger.error(f"Error opening status update model dialog: {e}")
+    elif selected_option_value.startswith("delete_"):
+        pass
+    else:
+        pass
 
 
 @app.action("home_page_company_updates_button_clicked")
@@ -151,7 +178,8 @@ def home_page_company_updates_button_click_handler(ack, body, logger):
                 team=user_preferences.active_team_filter,
                 department=user_preferences.active_department_filter,
                 project=user_preferences.active_project_filter,
-                is_admin=user_info is not None and (user_info.is_admin or user_info.is_owner)
+                is_admin=user_info is not None and (user_info.is_admin or user_info.is_owner),
+                current_user_slack_id=user_id
             )
         )
     except Exception as e:
@@ -471,7 +499,8 @@ def home_page_select_team_filter_change_handler(ack, body, logger):
             user_id=user_id,
             view=home_page_company_updates_view(team=team, department=department, project=project,
                                                 is_admin=user_info is not None and (user_info.is_admin
-                                                                                    or user_info.is_owner))
+                                                                                    or user_info.is_owner),
+                                                current_user_slack_id=user_id)
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -501,18 +530,25 @@ def share_status_update_button_click_handler(ack, body, logger):
 def status_update_preview_button_click_handler(ack, body, logger):
     ack()
     status_update = retrieve_status_update_from_view(body)
+    existing_status_update = dao.read_status_update(status_update.uuid)
     user_info = get_user_info(status_update.author_slack_user_id)
     if user_info:
         status_update.author_slack_user_name = user_info.name
+    if existing_status_update and existing_status_update.published:
+        status_update.created_at = existing_status_update.created_at
+        status_update.author_slack_user_name = existing_status_update.author_slack_user_name
+        status_update.author_slack_user_id = existing_status_update.author_slack_user_id
+        status_update.published = existing_status_update.published
     dao.insert_status_update(status_update)
 
-    try:
-        app.client.views_open(
-            trigger_id=body["trigger_id"],
-            view=share_status_update_preview_view(update=status_update),
-        )
-    except Exception as e:
-        logger.error(f"Error publishing home tab: {e}")
+    if not status_update.published:
+        try:
+            app.client.views_open(
+                trigger_id=body["trigger_id"],
+                view=share_status_update_preview_view(update=status_update),
+            )
+        except Exception as e:
+            logger.error(f"Error publishing home tab: {e}")
 
 
 @app.action("status_update_preview_back_to_editing_clicked")

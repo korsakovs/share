@@ -11,7 +11,7 @@ hsc = html_special_chars
 def fix_slack_markdown_links(markdown_str: str):
     # This is ugly and buggy and needs to be improved!
     # The way Slack adds links to the markdown string is not compatible with markdown libraries, so we need to apply
-    # a hacky trick to fix this. This trick os not perfect and I doubt that it works perfect for all kind of URLs. We
+    # a hacky trick to fix this. This trick is not perfect and I doubt that it works perfect for all kind of URLs. We
     # probably need to add some unit tests
     result = []
     url, url_text = "", ""
