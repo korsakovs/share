@@ -136,8 +136,8 @@ def status_update_dialog_view(state: StatusUpdate = None) -> View:
     return View(
         type="modal",
         callback_id="status_update_preview_button_clicked",
-        title="Share Status Update" if not state.published else "Update Status Update",
-        submit="Preview" if not state.published else "Save",
+        title="Share Status Update" if state and not state.published else "Update Status Update",
+        submit="Preview" if state and not state.published else "Save",
         close="Cancel",
         private_metadata=str(PrivateMetadata(status_update_uuid=None if state is None else state.uuid)),
         blocks=[
