@@ -12,7 +12,7 @@ from updateme.slackbot.blocks import status_update_type_block, status_update_tea
     home_page_status_update_filters, status_update_blocks, status_update_discuss_link_block, \
     home_page_configuration_actions_block
 from updateme.core import dao
-from updateme.core.model import StatusUpdate, Project, Team, StatusUpdateSource, Department
+from updateme.core.model import StatusUpdate, Project, Team, StatusUpdateSource, Department, StatusUpdateType
 from updateme.slackbot.utils import es
 
 STATUS_UPDATE_TYPE_BLOCK = "status_update_type_block"
@@ -478,6 +478,97 @@ def home_page_configuration_delete_project_view(project_name: str, project_uuid:
         blocks=[
             SectionBlock(
                 text="Are you sure you want to delete project " + es(project_name) + "?"
+            ),
+        ]
+    )
+
+
+def home_page_configuration_status_types_view(status_types: List[StatusUpdateType]):
+    status_types_blocks = []
+
+    for status_type in sorted(status_types, key=lambda p: str(p.name).lower()):
+        status_types_blocks.append(
+            SectionBlock(
+                text=status_type.emoji + " " + status_type.name,
+                accessory=OverflowMenuElement(action_id="configuration_status_type_menu_clicked", options=[
+                    Option(value="edit_" + status_type.uuid, text="Edit..."),
+                    Option(value="delete_" + status_type.uuid, text="Delete..."),
+                ])
+            )
+        )
+
+    return View(
+        type="home",
+        title="Welcome to Chirik Bot!",
+        blocks=[
+            home_page_actions_block(selected="configuration", show_configuration=True),
+            DividerBlock(),
+            home_page_configuration_actions_block(selected="status_types"),
+            DividerBlock(),
+            *status_types_blocks,
+            ActionsBlock(elements=[
+                ButtonElement(
+                    text="Add new status type...",
+                    action_id="configuration_add_new_status_type_clicked"
+                )
+            ])
+        ]
+    )
+
+
+
+def home_page_configuration_add_new_status_update_type_view(status_update_type_name: str = None,
+                                                            status_update_type_emoji: str = None,
+                                                            status_update_type_uuid: str = None):
+    return View(
+        type="modal",
+        callback_id="home_page_configuration_new_status_update_type_dialog_submitted",
+        title="Add status update type" if status_update_type_uuid is None else "Edit status update type",
+        submit="Add" if status_update_type_uuid is None else "Save",
+        close="Cancel",
+        private_metadata=status_update_type_uuid,
+        blocks=[
+            InputBlock(
+                block_id="home_page_configuration_new_status_update_type_dialog_emoji_input_block",
+                label="Status update emoji",
+                optional=False,
+                element=PlainTextInputElement(
+                    action_id="home_page_configuration_new_status_update_type_dialog_emoji_input_action",
+                    placeholder="Status update emoji",
+                    max_length=64,
+                    focus_on_load=False,
+                    initial_value=status_update_type_emoji
+                )
+            ),
+            InputBlock(
+                block_id="home_page_configuration_new_status_update_type_dialog_name_input_block",
+                label="Status update name",
+                optional=False,
+                element=PlainTextInputElement(
+                    action_id="home_page_configuration_new_status_update_type_dialog_name_input_action",
+                    placeholder="Status update name",
+                    max_length=64,
+                    focus_on_load=True,
+                    initial_value=status_update_type_name
+                )
+            )
+        ]
+    )
+
+
+def home_page_configuration_delete_status_update_type_view(status_update_type_name: str, status_update_type_emoji: str,
+                                                           status_update_type_uuid: str):
+    return View(
+        type="modal",
+        callback_id="home_page_configuration_delete_status_update_type_dialog_submitted",
+        title="Delete status type?",
+        submit="Delete",
+        close="Cancel",
+        private_metadata=status_update_type_uuid,
+        blocks=[
+            SectionBlock(
+                text="Are you sure you want to delete status update type "
+                     + es(status_update_type_emoji + " " + status_update_type_name) + "?"
             ),
         ]
     )

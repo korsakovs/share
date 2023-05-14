@@ -111,6 +111,8 @@ class Dao(ABC):
     @abstractmethod
     def read_status_update_types(self) -> List[StatusUpdateType]: ...
 
+    def delete_status_update_type(self, uuid: str): ...
+
     @abstractmethod
     def read_slack_user_preferences(self, user_id: str) -> Optional[SlackUserPreferences]: ...
 
@@ -483,7 +485,17 @@ class SQLAlchemyDao(Dao, ABC):
 
     def read_status_update_types(self, name: str = None) -> List[StatusUpdateType]:
         with self._get_session() as session:
-            return session.query(StatusUpdateType).filter(StatusUpdateType.deleted == false()).all()
+            result = session.query(StatusUpdateType).filter(StatusUpdateType.deleted == false())
+            if name:
+                result = result.filter(StatusUpdateType.name == name)
+            return result.all()
+
+    def delete_status_update_type(self, uuid: str):
+        with self._get_session() as session:
+            session.query(StatusUpdateType).filter(StatusUpdateType.uuid == uuid).update({
+                StatusUpdateType.deleted: True
+            }, synchronize_session=False)
+
 
     def read_slack_user_preferences(self, user_id: str) -> Optional[SlackUserPreferences]:
         return self._get_obj(SlackUserPreferences, user_id)

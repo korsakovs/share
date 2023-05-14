@@ -102,15 +102,16 @@ def home_page_status_update_filters(teams: List[Team], projects: List[Project], 
     )
 
 
-def status_update_type_block(status_update_groups: List[StatusUpdateType],
+def status_update_type_block(status_update_types: List[StatusUpdateType],
                              label: str = "Status Update Type", select_text="Select status update group",
                              selected_value: StatusUpdateType = None, block_id: str = None,
                              action_id: str = None) -> SectionBlock:
     def type_as_option(status_update_type: StatusUpdateType) -> Option:
         return Option(value=status_update_type.uuid, text=f"{status_update_type.emoji} {status_update_type.name}")
 
+    initial_option = None
     if selected_value and not selected_value.deleted:
-        selected_value = type_as_option(selected_value)
+        initial_option = type_as_option(selected_value)
 
     return SectionBlock(
         block_id=block_id,
@@ -119,10 +120,11 @@ def status_update_type_block(status_update_groups: List[StatusUpdateType],
             action_id=action_id,
             placeholder=select_text,
             options=[
-                type_as_option(status_update_group)
-                for status_update_group in status_update_groups if not status_update_group.deleted
+                type_as_option(status_update_type)
+                for status_update_type in sorted(status_update_types, key=lambda s: str(s.name).lower())
+                if not status_update_type.deleted
             ],
-            initial_option=selected_value,
+            initial_option=initial_option,
             focus_on_load=False
         )
     )

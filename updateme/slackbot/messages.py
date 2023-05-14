@@ -57,7 +57,7 @@ def status_update_preview_message(status_update: StatusUpdate) -> List[Block]:
         status_update_type_block(
             block_id="status_update_preview_status_update_type",
             action_id="status_update_message_preview_status_update_type_selected",
-            status_update_groups=dao.read_status_update_types(),
+            status_update_types=dao.read_status_update_types(),
             selected_value=status_update.type
         ),
         status_update_teams_block(

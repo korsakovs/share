@@ -11,7 +11,8 @@ from slack_sdk.models.metadata import Metadata
 
 from updateme.core import dao
 from updateme.core.config import slack_bot_token, slack_app_token, get_env, Env
-from updateme.core.model import StatusUpdateSource, StatusUpdate, SlackUserInfo, Department, Team, Project
+from updateme.core.model import StatusUpdateSource, StatusUpdate, SlackUserInfo, Department, Team, Project, \
+    StatusUpdateType
 from updateme.slackbot.messages import status_update_preview_message, status_update_from_message
 from updateme.slackbot.utils import get_or_create_slack_user_preferences
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
@@ -23,7 +24,8 @@ from updateme.slackbot.views import status_update_dialog_view, retrieve_status_u
     home_page_configuration_add_new_department_view, home_page_configuration_delete_department_view, \
     home_page_configuration_add_new_team_view, home_page_configuration_delete_team_view, \
     home_page_configuration_projects_view, home_page_configuration_add_new_project_view, \
-    home_page_configuration_delete_project_view
+    home_page_configuration_delete_project_view, home_page_configuration_status_types_view, \
+    home_page_configuration_add_new_status_update_type_view, home_page_configuration_delete_status_update_type_view
 from updateme.slackbot.workflows.email import email_updates_wf_step_edit_handler, email_updates_wf_step_save_handler, \
     email_updates_wf_step_execute_handler
 from updateme.slackbot.workflows.publish import publish_updates_wf_step_edit_handler, \
@@ -142,7 +144,7 @@ def my_updates_status_message_menu_button_clicked_handler(ack, body, logger):
             try:
                 app.client.views_open(
                     trigger_id=body["trigger_id"],
-                    view=status_update_dialog_view(state=status_update),
+                    view=status_update_dialog_view(state=status_update)
                 )
             except Exception as e:
                 logger.error(f"Error opening status update model dialog: {e}")
@@ -261,6 +263,26 @@ def home_page_configuration_projects_button_clicked_handler(ack, body, logger):
             user_id=user_id,
             view=home_page_configuration_projects_view(
                 projects=dao.read_projects()
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("configuration_status_types_button_clicked")
+def configuration_status_types_button_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    user_id = body["user"]["id"]
+    user_preferences = get_or_create_slack_user_preferences(user_id)
+    user_preferences.active_configuration_tab = "status_types"
+    dao.insert_slack_user_preferences(user_preferences)
+
+    try:
+        app.client.views_publish(
+            user_id=user_id,
+            view=home_page_configuration_status_types_view(
+                status_types=dao.read_status_update_types()
             )
         )
     except Exception as e:
@@ -645,6 +667,135 @@ def home_page_configuration_delete_project_dialog_submitted_handler(ack, body, l
             user_id=body["user"]["id"],
             view=home_page_configuration_projects_view(
                 projects=dao.read_projects()
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("configuration_add_new_status_type_clicked")
+def configuration_add_new_status_type_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    try:
+        app.client.views_open(
+            trigger_id=body["trigger_id"],
+            view=home_page_configuration_add_new_status_update_type_view(),
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.action("configuration_status_type_menu_clicked")
+def configuration_status_type_menu_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    action = str(body["actions"][0]["selected_option"]["value"])
+
+    if action.startswith("edit_"):
+        status_update_type_uuid = action.split("_", maxsplit=1)[1]
+        status_update_type = dao.read_status_update_type(status_update_type_uuid)
+        if not status_update_type:
+            logger.error(f"Can not find a status update type {status_update_type_uuid}")
+        else:
+            try:
+                app.client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view=home_page_configuration_add_new_status_update_type_view(
+                        status_update_type_name=status_update_type.name,
+                        status_update_type_emoji=status_update_type.emoji,
+                        status_update_type_uuid=status_update_type.uuid
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Error opening add new status update type dialog: {e}")
+    elif action.startswith("delete_"):
+        status_update_type_uuid = action.split("_", maxsplit=1)[1]
+        status_update_type = dao.read_status_update_type(status_update_type_uuid)
+        if not status_update_type:
+            logger.error(f"Can not find a status update type {status_update_type_uuid}")
+        else:
+            app.client.views_open(
+                trigger_id=body["trigger_id"],
+                view=home_page_configuration_delete_status_update_type_view(
+                    status_update_type_name=status_update_type.name,
+                    status_update_type_emoji=status_update_type.emoji,
+                    status_update_type_uuid=status_update_type.uuid
+                )
+            )
+    else:
+        pass
+
+
+@app.view("home_page_configuration_new_status_update_type_dialog_submitted")
+def home_page_configuration_new_status_update_type_dialog_submitted_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    status_update_type_emoji = str(body["view"]["state"]["values"][
+                           "home_page_configuration_new_status_update_type_dialog_emoji_input_block"][
+                           "home_page_configuration_new_status_update_type_dialog_emoji_input_action"]["value"]).strip()
+
+    status_update_type_name = str(body["view"]["state"]["values"][
+                           "home_page_configuration_new_status_update_type_dialog_name_input_block"][
+                           "home_page_configuration_new_status_update_type_dialog_name_input_action"]["value"]).strip()
+
+    if not status_update_type_name:
+        raise ValueError("Status update type name is empty")
+
+    try:
+        company = dao.read_companies(slack_team_id=body["team"]["id"])[0]
+    except IndexError:
+        raise IndexError(f"Can not find a company with id = {body['team']['id']}") from None
+
+    status_update_type_uuid = body["view"]["private_metadata"]
+    if status_update_type_uuid:
+        status_update_type = dao.read_status_update_type(status_update_type_uuid)
+        if not status_update_type:
+            logger.error(f"Can not find status update type {status_update_type_uuid}")
+        else:
+            status_update_types = dao.read_status_update_types(name=status_update_type_name)
+            if status_update_types and status_update_types[0].uuid != status_update_type_uuid:
+                logger.error("Status update type with such name already exist")
+            else:
+                status_update_type.emoji = status_update_type_emoji
+                status_update_type.name = status_update_type_name
+                status_update_type.deleted = False
+    else:
+        if not dao.read_status_update_types(name=status_update_type_name) :
+            dao.insert_status_update_type(StatusUpdateType(company=company, name=status_update_type_name,
+                                                           emoji=status_update_type_emoji))
+
+    user_id = body["user"]["id"]
+    try:
+        app.client.views_publish(
+            user_id=user_id,
+            view=home_page_configuration_status_types_view(
+                status_types=dao.read_status_update_types()
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.view("home_page_configuration_delete_status_update_type_dialog_submitted")
+def home_page_configuration_delete_status_update_type_dialog_submitted_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    status_update_type_uuid = body["view"]["private_metadata"]
+    status_update_type = dao.read_status_update_type(status_update_type_uuid)
+    if status_update_type is None:
+        logger.error(f"Can not find status update type {status_update_type_uuid}")
+    else:
+        dao.delete_status_update_type(status_update_type_uuid)
+
+    try:
+        app.client.views_publish(
+            user_id=body["user"]["id"],
+            view=home_page_configuration_status_types_view(
+                status_types=dao.read_status_update_types()
             )
         )
     except Exception as e:
