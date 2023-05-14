@@ -246,6 +246,23 @@ def home_page_company_updates_view(team: Team = None, department: Department = N
     )
 
 
+def home_page_company_updates_delete_status_update_view(status_update_uuid: str, status_update_text: str):
+    return View(
+        type="modal",
+        callback_id="home_page_company_updates_delete_status_update_dialog_submitted",
+        title="Delete status update?",
+        submit="Delete",
+        close="Cancel",
+        private_metadata=status_update_uuid,
+        blocks=[
+            SectionBlock(
+                text="Are you sure you want to delete status update: " + es(status_update_text) + "?"
+            ),
+        ]
+    )
+
+
+
 def home_page_configuration_departments_view(departments: List[Department]):
     department_blocks = [
         SectionBlock(

@@ -26,7 +26,7 @@ from updateme.slackbot.views import status_update_dialog_view, retrieve_status_u
     home_page_configuration_projects_view, home_page_configuration_add_new_project_view, \
     home_page_configuration_delete_project_view, home_page_configuration_status_types_view, \
     home_page_configuration_add_new_status_update_type_view, home_page_configuration_delete_status_update_type_view, \
-    home_page_my_updates_delete_status_update_view
+    home_page_my_updates_delete_status_update_view, home_page_company_updates_delete_status_update_view
 from updateme.slackbot.workflows.email import email_updates_wf_step_edit_handler, email_updates_wf_step_save_handler, \
     email_updates_wf_step_execute_handler
 from updateme.slackbot.workflows.publish import publish_updates_wf_step_edit_handler, \
@@ -231,6 +231,71 @@ def home_page_company_updates_button_click_handler(ack, body, logger):
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
 
+@app.action("company_updates_status_message_menu_button_clicked")
+def company_updates_status_message_menu_button_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    selected_option_value = str(body["actions"][0]["selected_option"]["value"])
+
+    if selected_option_value.startswith("edit_"):
+        status_update_uuid = selected_option_value.split("_", maxsplit=1)[1]
+        status_update = dao.read_status_update(status_update_uuid)
+        if not status_update:
+            logger.error(f"Can not find status update {status_update_uuid}")
+        else:
+            try:
+                app.client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view=status_update_dialog_view(state=status_update)
+                )
+            except Exception as e:
+                logger.error(f"Error opening status update model dialog: {e}")
+    elif selected_option_value.startswith("delete_"):
+        status_update_uuid = selected_option_value.split("_", maxsplit=1)[1]
+        status_update = dao.read_status_update(status_update_uuid)
+        if not status_update:
+            logger.error(f"Can not find status update {status_update_uuid}")
+        else:
+            app.client.views_open(
+                trigger_id=body["trigger_id"],
+                view=home_page_company_updates_delete_status_update_view(
+                    status_update_uuid=status_update.uuid,
+                    status_update_text=status_update.text
+                )
+            )
+    else:
+        pass
+
+@app.view("home_page_company_updates_delete_status_update_dialog_submitted")
+def handle_view_submission_events(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    status_update_uuid = body["view"]["private_metadata"]
+    status_update = dao.read_status_update(status_update_uuid)
+    if status_update is None:
+        logger.error(f"Can not find status update {status_update_uuid}")
+    else:
+        dao.delete_status_update(status_update_uuid)
+
+    try:
+        user_id = body["user"]["id"]
+        user_preferences = get_or_create_slack_user_preferences(user_id)
+        user_info = get_user_info(user_id)
+
+        app.client.views_publish(
+            user_id=body["user"]["id"],
+            view=home_page_company_updates_view(
+                team=user_preferences.active_team_filter,
+                department=user_preferences.active_department_filter,
+                project=user_preferences.active_project_filter,
+                is_admin=user_info is not None and (user_info.is_admin or user_info.is_owner),
+                current_user_slack_id=user_id
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
 
 @app.action("home_page_configuration_button_clicked")
 def home_page_configuration_button_clicked_handler(ack, body, logger):
