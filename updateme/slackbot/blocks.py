@@ -48,6 +48,16 @@ def home_page_configuration_actions_block(selected: str = "departments") -> Acti
             style="primary" if selected == "teams" else None,
             action_id="configuration_teams_button_clicked"
         ),
+        ButtonElement(
+            text="Projects",
+            style="primary" if selected == "projects" else None,
+            action_id="configuration_projects_button_clicked"
+        ),
+        ButtonElement(
+            text="Status Types",
+            style="primary" if selected == "status_types" else None,
+            action_id="configuration_status_types_button_clicked"
+        ),
     ]
 
     return ActionsBlock(elements=elements)

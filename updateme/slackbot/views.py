@@ -408,3 +408,76 @@ def home_page_configuration_delete_team_view(team_name: str, team_uuid: str):
             ),
         ]
     )
+
+
+def home_page_configuration_projects_view(projects: List[Project]):
+    projects_blocks = []
+
+    for project in sorted(projects, key=lambda p: str(p.name).lower()):
+        projects_blocks.append(
+            SectionBlock(
+                text=project.name,
+                accessory=OverflowMenuElement(action_id="configuration_project_menu_clicked", options=[
+                    Option(value="edit_" + project.uuid, text="Edit..."),
+                    Option(value="delete_" + project.uuid, text="Delete..."),
+                ])
+            )
+        )
+
+    return View(
+        type="home",
+        title="Welcome to Chirik Bot!",
+        blocks=[
+            home_page_actions_block(selected="configuration", show_configuration=True),
+            DividerBlock(),
+            home_page_configuration_actions_block(selected="projects"),
+            DividerBlock(),
+            *projects_blocks,
+            ActionsBlock(elements=[
+                ButtonElement(
+                    text="Add new project...",
+                    action_id="configuration_add_new_project_clicked"
+                )
+            ])
+        ]
+    )
+
+def home_page_configuration_add_new_project_view(project_name: str = None, project_uuid: str = None):
+    return View(
+        type="modal",
+        callback_id="home_page_configuration_new_project_dialog_submitted",
+        title="Add new project" if project_uuid is None else "Edit project",
+        submit="Add" if project_uuid is None else "Save",
+        close="Cancel",
+        private_metadata=project_uuid,
+        blocks=[
+            InputBlock(
+                block_id="home_page_configuration_new_project_dialog_input_block",
+                label="Project name",
+                optional=False,
+                element=PlainTextInputElement(
+                    action_id="home_page_configuration_new_project_dialog_input_action",
+                    placeholder="Project name",
+                    max_length=64,
+                    focus_on_load=True,
+                    initial_value=project_name
+                )
+            )
+        ]
+    )
+
+
+def home_page_configuration_delete_project_view(project_name: str, project_uuid: str):
+    return View(
+        type="modal",
+        callback_id="home_page_configuration_delete_project_dialog_submitted",
+        title="Delete project?",
+        submit="Delete",
+        close="Cancel",
+        private_metadata=project_uuid,
+        blocks=[
+            SectionBlock(
+                text="Are you sure you want to delete project " + es(project_name) + "?"
+            ),
+        ]
+    )

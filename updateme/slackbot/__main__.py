@@ -11,7 +11,7 @@ from slack_sdk.models.metadata import Metadata
 
 from updateme.core import dao
 from updateme.core.config import slack_bot_token, slack_app_token, get_env, Env
-from updateme.core.model import StatusUpdateSource, StatusUpdate, SlackUserInfo, Department, Team
+from updateme.core.model import StatusUpdateSource, StatusUpdate, SlackUserInfo, Department, Team, Project
 from updateme.slackbot.messages import status_update_preview_message, status_update_from_message
 from updateme.slackbot.utils import get_or_create_slack_user_preferences
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
@@ -21,7 +21,9 @@ from updateme.slackbot.views import status_update_dialog_view, retrieve_status_u
     home_page_my_updates_view, home_page_company_updates_view, retrieve_status_update_filters_from_view, \
     home_page_configuration_departments_view, home_page_configuration_teams_view, \
     home_page_configuration_add_new_department_view, home_page_configuration_delete_department_view, \
-    home_page_configuration_add_new_team_view, home_page_configuration_delete_team_view
+    home_page_configuration_add_new_team_view, home_page_configuration_delete_team_view, \
+    home_page_configuration_projects_view, home_page_configuration_add_new_project_view, \
+    home_page_configuration_delete_project_view
 from updateme.slackbot.workflows.email import email_updates_wf_step_edit_handler, email_updates_wf_step_save_handler, \
     email_updates_wf_step_execute_handler
 from updateme.slackbot.workflows.publish import publish_updates_wf_step_edit_handler, \
@@ -240,6 +242,25 @@ def configuration_teams_button_clicked_handler(ack, body, logger):
             user_id=user_id,
             view=home_page_configuration_teams_view(
                 teams=dao.read_teams()
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+@app.action("configuration_projects_button_clicked")
+def home_page_configuration_projects_button_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    user_id = body["user"]["id"]
+    user_preferences = get_or_create_slack_user_preferences(user_id)
+    user_preferences.active_configuration_tab = "projects"
+    dao.insert_slack_user_preferences(user_preferences)
+
+    try:
+        app.client.views_publish(
+            user_id=user_id,
+            view=home_page_configuration_projects_view(
+                projects=dao.read_projects()
             )
         )
     except Exception as e:
@@ -481,7 +502,6 @@ def home_page_configuration_delete_team_dialog_submitted_handler(ack, body, logg
         logger.error(f"Error publishing home tab: {e}")
 
 
-
 @app.action("home_page_select_team_filter_changed")
 def home_page_select_team_filter_change_handler(ack, body, logger):
     ack()
@@ -509,6 +529,126 @@ def home_page_select_team_filter_change_handler(ack, body, logger):
 @app.action("home_page_select_project_filter_changed")
 def home_page_select_team_project_change_handler(ack, body, logger):
     home_page_select_team_filter_change_handler(ack, body, logger)
+
+
+@app.action("configuration_project_menu_clicked")
+def configuration_project_menu_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    action = str(body["actions"][0]["selected_option"]["value"])
+
+    if action.startswith("edit_"):
+        project_uuid = action.split("_", maxsplit=1)[1]
+        project = dao.read_project(project_uuid)
+        if not project:
+            logger.error(f"Can not find a project {project_uuid}")
+        else:
+            try:
+                app.client.views_open(
+                    trigger_id=body["trigger_id"],
+                    view=home_page_configuration_add_new_project_view(
+                        project_name=project.name,
+                        project_uuid=project.uuid
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Error opening add new project dialog: {e}")
+    elif action.startswith("delete_"):
+        project_uuid = action.split("_", maxsplit=1)[1]
+        project = dao.read_project(project_uuid)
+        if not project:
+            logger.error(f"Can not find a project {project_uuid}")
+        else:
+            app.client.views_open(
+                trigger_id=body["trigger_id"],
+                view=home_page_configuration_delete_project_view(
+                    project_name=project.name,
+                    project_uuid=project.uuid
+                )
+            )
+    else:
+        pass
+
+
+@app.action("configuration_add_new_project_clicked")
+def configuration_add_new_project_clicked_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    try:
+        app.client.views_open(
+            trigger_id=body["trigger_id"],
+            view=home_page_configuration_add_new_project_view(),
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.view("home_page_configuration_new_project_dialog_submitted")
+def home_page_configuration_new_project_dialog_submitted_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    project_name = str(body["view"]["state"]["values"]["home_page_configuration_new_project_dialog_input_block"][
+        "home_page_configuration_new_project_dialog_input_action"]["value"]).strip()
+
+    if not project_name:
+        raise ValueError("Project name is empty")
+
+    try:
+        company = dao.read_companies(slack_team_id=body["team"]["id"])[0]
+    except IndexError:
+        raise IndexError(f"Can not find a company with id = {body['team']['id']}") from None
+
+    project_uuid = body["view"]["private_metadata"]
+    if project_uuid:
+        project = dao.read_project(project_uuid)
+        if not project:
+            logger.error(f"Can not find project {project_uuid}")
+        else:
+            projects = dao.read_projects(project_name=project_name)
+            if projects and projects[0].uuid != project_uuid:
+                logger.error("Project with such name already exist")
+            else:
+                project.name = project_name
+                project.deleted = False
+    else:
+        if not dao.read_projects(project_name=project_name) :
+            dao.insert_department(Project(company=company, name=project_name))
+
+    user_id = body["user"]["id"]
+    try:
+        app.client.views_publish(
+            user_id=user_id,
+            view=home_page_configuration_projects_view(
+                projects=dao.read_projects()
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
+
+
+@app.view("home_page_configuration_delete_project_dialog_submitted")
+def home_page_configuration_delete_project_dialog_submitted_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+
+    project_uuid = body["view"]["private_metadata"]
+    project = dao.read_project(project_uuid)
+    if project is None:
+        logger.error(f"Can not find project {project_uuid}")
+    else:
+        dao.delete_project(project_uuid)
+
+    try:
+        app.client.views_publish(
+            user_id=body["user"]["id"],
+            view=home_page_configuration_projects_view(
+                projects=dao.read_projects()
+            )
+        )
+    except Exception as e:
+        logger.error(f"Error publishing home tab: {e}")
 
 
 @app.action("share_status_update_button_clicked")

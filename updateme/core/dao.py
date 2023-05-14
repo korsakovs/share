@@ -100,6 +100,8 @@ class Dao(ABC):
     @abstractmethod
     def read_projects(self, project_name: str = None) -> List[Project]: ...
 
+    def delete_project(self, uuid: str): ...
+
     @abstractmethod
     def insert_status_update_type(self, status_update_type: StatusUpdateType): ...
 
@@ -467,6 +469,12 @@ class SQLAlchemyDao(Dao, ABC):
                 result = result.filter(Project.name == project_name)
             return result.all()
 
+    def delete_project(self, uuid: str):
+        with self._get_session() as session:
+            session.query(Project).filter(Project.uuid == uuid).update({
+                Project.deleted: True
+            }, synchronize_session=False)
+
     def insert_status_update_type(self, status_update_type: StatusUpdateType):
         self._set_obj(status_update_type)
 
@@ -573,4 +581,4 @@ def create_initial_data():
             existing_initial_reactions.append(new_status_update_reaction)
 
 
-create_initial_data()
+# create_initial_data()
