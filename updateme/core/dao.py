@@ -56,6 +56,9 @@ class Dao(ABC):
                             last_n: int = None, source: StatusUpdateSource = None) -> List[StatusUpdate]: ...
 
     @abstractmethod
+    def delete_status_update(self, uuid: str): ...
+
+    @abstractmethod
     def delete_team_status_updates(self, team_uuid: str): ...
 
     @abstractmethod
@@ -100,6 +103,7 @@ class Dao(ABC):
     @abstractmethod
     def read_projects(self, project_name: str = None) -> List[Project]: ...
 
+    @abstractmethod
     def delete_project(self, uuid: str): ...
 
     @abstractmethod
@@ -111,6 +115,7 @@ class Dao(ABC):
     @abstractmethod
     def read_status_update_types(self) -> List[StatusUpdateType]: ...
 
+    @abstractmethod
     def delete_status_update_type(self, uuid: str): ...
 
     @abstractmethod
@@ -391,6 +396,12 @@ class SQLAlchemyDao(Dao, ABC):
                 result = result.limit(last_n)
 
             return result.distinct().all()
+
+    def delete_status_update(self, uuid: str):
+        with self._get_session() as session:
+            session.query(StatusUpdate).filter(StatusUpdate.uuid == uuid).update({
+                StatusUpdate.deleted: True
+            }, synchronize_session=False)
 
     def delete_team_status_updates(self, team_uuid: str):
         with self._get_session() as session:
