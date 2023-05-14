@@ -109,7 +109,7 @@ def status_update_type_block(status_update_groups: List[StatusUpdateType],
     def type_as_option(status_update_type: StatusUpdateType) -> Option:
         return Option(value=status_update_type.uuid, text=f"{status_update_type.emoji} {status_update_type.name}")
 
-    if selected_value:
+    if selected_value and not selected_value.deleted:
         selected_value = type_as_option(selected_value)
 
     return SectionBlock(
@@ -135,7 +135,7 @@ def status_update_teams_block(status_update_teams: List[Team], label: str = "Pic
         return Option(value=team.uuid, text=team.name)
 
     if selected_options is not None:
-        selected_options = [team_as_option(team) for team in selected_options]
+        selected_options = [team_as_option(team) for team in selected_options if not team.deleted]
 
     return SectionBlock(
         block_id=block_id,
@@ -158,7 +158,7 @@ def status_update_projects_block(status_update_projects: List[Project],
         return Option(value=project.uuid, text=project.name)
 
     if selected_options is not None:
-        selected_options = [project_as_option(project) for project in selected_options]
+        selected_options = [project_as_option(project) for project in selected_options if not project.deleted]
 
     return SectionBlock(
         block_id=block_id,
