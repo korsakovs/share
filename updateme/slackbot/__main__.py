@@ -672,16 +672,22 @@ def status_update_preview_button_click_handler(ack, body, logger):
     status_update = retrieve_status_update_from_view(body)
     existing_status_update = dao.read_status_update(status_update.uuid)
     user_info = get_user_info(status_update.author_slack_user_id)
+    show_preview = True
+
     if user_info:
         status_update.author_slack_user_name = user_info.name
     if existing_status_update and existing_status_update.published:
-        status_update.created_at = existing_status_update.created_at
-        status_update.author_slack_user_name = existing_status_update.author_slack_user_name
-        status_update.author_slack_user_id = existing_status_update.author_slack_user_id
-        status_update.published = existing_status_update.published
-    dao.insert_status_update(status_update)
+        existing_status_update.teams = status_update.teams
+        existing_status_update.projects = status_update.projects
+        existing_status_update.type = status_update.type
+        existing_status_update.discuss_link = status_update.discuss_link
+        existing_status_update.text = status_update.text
+        dao.insert_status_update(existing_status_update)
+        show_preview = False
+    else:
+        dao.insert_status_update(status_update)
 
-    if not status_update.published:
+    if show_preview:
         try:
             app.client.views_open(
                 trigger_id=body["trigger_id"],
