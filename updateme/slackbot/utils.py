@@ -1,11 +1,16 @@
 import itertools
+from threading import Lock
 from typing import List, Callable
 
 from slack_sdk.models.blocks import OptionGroup, Option
 
 from updateme.core import dao
-from updateme.core.model import SlackUserPreferences, Team
+from updateme.core.dao import create_initial_data
+from updateme.core.model import SlackUserPreferences, Team, Company
 from updateme.core.utils import join_strings_with_commas
+
+
+CREATE_COMPANY_LOCK = Lock()
 
 
 def escape_string(s: str) -> str:
@@ -31,6 +36,40 @@ def get_or_create_slack_user_preferences(user_id: str) -> SlackUserPreferences:
         dao.insert_slack_user_preferences(user_preferences)
 
     return user_preferences
+
+
+def get_or_create_company_by_body(body) -> Company:
+    companies = dao.read_companies(slack_team_id=body["team"]["id"])
+    try:
+        return companies[0]
+    except IndexError:
+        with CREATE_COMPANY_LOCK:
+            try:
+                return dao.read_companies(slack_team_id=body["team"]["id"])[0]
+            except IndexError:
+                company = Company(slack_team_id=body["team"]["id"], name=body["team"]["domain"])
+                dao.insert_company(company)
+                create_initial_data(company)
+                if not company.name and body["team"]["domain"]:
+                    # It could be that the company was created in the get_or_create_company_by_event function, where
+                    # we didn't know the company name
+                    company.name = body["team"]["domain"]
+                return company
+
+
+def get_or_create_company_by_event(event) -> Company:
+    companies = dao.read_companies(slack_team_id=event["view"]["team_id"])
+    try:
+        return companies[0]
+    except IndexError:
+        with CREATE_COMPANY_LOCK:
+            try:
+                return dao.read_companies(slack_team_id=event["view"]["team_id"])[0]
+            except IndexError:
+                company = Company(slack_team_id=event["view"]["team_id"], name="")
+                dao.insert_company(Company(slack_team_id=event["view"]["team_id"], name=""))
+                create_initial_data(company)
+                return company
 
 
 def teams_selector_option_groups(teams: List[Team], add_department_as_team: bool = False,

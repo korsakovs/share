@@ -2,7 +2,7 @@ from datetime import date
 from typing import List, Optional
 from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Option, StaticSelectElement, \
     PlainTextInputElement, InputBlock, ButtonElement, ActionsBlock, TextObject, HeaderBlock, DividerBlock, \
-    ContextBlock, MarkdownTextObject, PlainTextObject, OverflowMenuElement, UrlInputElement
+    ContextBlock, MarkdownTextObject, PlainTextObject, OverflowMenuElement
 
 from updateme.core.model import StatusUpdateType, Team, Project, StatusUpdate, StatusUpdateReaction, Department
 from updateme.slackbot.utils import es, teams_selector_option_groups, join_names_with_commas
@@ -136,8 +136,11 @@ def status_update_teams_block(status_update_teams: List[Team], label: str = "Pic
     def team_as_option(team: Team) -> Option:
         return Option(value=team.uuid, text=team.name)
 
+    team_uuids = [team.uuid for team in status_update_teams]
+
     if selected_options is not None:
-        selected_options = [team_as_option(team) for team in selected_options if not team.deleted]
+        selected_options = [team_as_option(team) for team in selected_options
+                            if team.uuid in team_uuids and not team.deleted]
 
     return SectionBlock(
         block_id=block_id,
@@ -160,7 +163,9 @@ def status_update_projects_block(status_update_projects: List[Project],
         return Option(value=project.uuid, text=project.name)
 
     if selected_options is not None:
-        selected_options = [project_as_option(project) for project in selected_options if not project.deleted]
+        project_uuids = [project.uuid for project in status_update_projects]
+        selected_options = [project_as_option(project) for project in selected_options
+                            if project_uuids in project_uuids and not project.deleted]
 
     return SectionBlock(
         block_id=block_id,

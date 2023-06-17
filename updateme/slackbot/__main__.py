@@ -14,7 +14,8 @@ from updateme.core.config import slack_bot_token, slack_app_token, get_env, Env
 from updateme.core.model import StatusUpdateSource, StatusUpdate, SlackUserInfo, Department, Team, Project, \
     StatusUpdateType
 from updateme.slackbot.messages import status_update_preview_message, status_update_from_message
-from updateme.slackbot.utils import get_or_create_slack_user_preferences
+from updateme.slackbot.utils import get_or_create_slack_user_preferences, get_or_create_company_by_event, \
+    get_or_create_company_by_body
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
@@ -63,7 +64,6 @@ def get_user_info(slack_user_id: str) -> Optional[SlackUserInfo]:
         is_owner=user.data["user"]["is_owner"]
     )
 
-
 @app.action(STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID)
 def status_update_modal_status_type_action_handler(ack):
     ack()
@@ -85,21 +85,39 @@ def home_page_open_handler(client: WebClient, event, logger):
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_info = get_user_info(user_id)
     is_admin = user_info and (user_info.is_admin or user_info.is_owner)
+    company_uuid = get_or_create_company_by_event(event).uuid
+
+    kwargs = {}
+    if user_preferences.active_project_filter:
+        kwargs["from_projects"] = [user_preferences.active_project_filter.uuid]
+    if user_preferences.active_team_filter:
+        kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
+    if user_preferences.active_department_filter:
+        kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
+    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
 
     if user_preferences.active_tab == "my_updates":
-        view = home_page_my_updates_view(author_slack_user_id=user_id, is_admin=is_admin,
-                                         current_user_slack_id=user_id)
+        view = home_page_my_updates_view(
+            status_updates=dao.read_status_updates(company_uuid=company_uuid, author_slack_user_id=user_id, last_n=100),
+            status_update_reactions=dao.read_status_update_reactions(company_uuid),
+            is_admin=is_admin,
+            current_user_slack_id=user_id
+        )
     elif user_preferences.active_tab == "company_updates":
         view = home_page_company_updates_view(
+            status_updates=status_updates,
             team=user_preferences.active_team_filter,
             department=user_preferences.active_department_filter,
             project=user_preferences.active_project_filter,
+            teams=dao.read_teams(company_uuid),
+            projects=dao.read_projects(company_uuid),
+            status_update_reactions=dao.read_status_update_reactions(company_uuid),
             is_admin=is_admin,
             current_user_slack_id=user_id
         )
     else:
         view = home_page_configuration_departments_view(
-            departments=dao.read_departments()
+            departments=dao.read_departments(company_uuid=company_uuid)
         )
 
     try:
@@ -121,11 +139,18 @@ def home_page_my_updates_button_click_handler(ack, body, logger):
     dao.insert_slack_user_preferences(user_preferences)
     user_info = get_user_info(user_id)
     is_admin = user_info and (user_info.is_admin or user_info.is_owner)
+    company_uuid = get_or_create_company_by_body(body).uuid
+
     try:
         app.client.views_publish(
             user_id=user_id,
-            view=home_page_my_updates_view(author_slack_user_id=user_id, is_admin=is_admin,
-                                           current_user_slack_id=user_id)
+            view=home_page_my_updates_view(
+                status_updates=dao.read_status_updates(company_uuid=company_uuid, author_slack_user_id=user_id,
+                                                       last_n=100),
+                status_update_reactions=dao.read_status_update_reactions(company_uuid),
+                is_admin=is_admin,
+                current_user_slack_id=user_id
+            )
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -137,23 +162,29 @@ def my_updates_status_message_menu_button_clicked_handler(ack, body, logger):
     logger.info(body)
 
     selected_option_value = str(body["actions"][0]["selected_option"]["value"])
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     if selected_option_value.startswith("edit_"):
         status_update_uuid = selected_option_value.split("_", maxsplit=1)[1]
-        status_update = dao.read_status_update(status_update_uuid)
+        status_update = dao.read_status_update(company_uuid=company_uuid, uuid=status_update_uuid)
         if not status_update:
             logger.error(f"Can not find status update {status_update_uuid}")
         else:
             try:
                 app.client.views_open(
                     trigger_id=body["trigger_id"],
-                    view=status_update_dialog_view(state=status_update)
+                    view=status_update_dialog_view(
+                        state=status_update,
+                        projects=dao.read_projects(company_uuid),
+                        teams=dao.read_teams(company_uuid),
+                        status_update_types=dao.read_status_update_types(company_uuid)
+                    )
                 )
             except Exception as e:
                 logger.error(f"Error opening status update model dialog: {e}")
     elif selected_option_value.startswith("delete_"):
         status_update_uuid = selected_option_value.split("_", maxsplit=1)[1]
-        status_update = dao.read_status_update(status_update_uuid)
+        status_update = dao.read_status_update(company_uuid, status_update_uuid)
         if not status_update:
             logger.error(f"Can not find status update {status_update_uuid}")
         else:
@@ -180,6 +211,9 @@ def home_page_my_updates_delete_status_update_dialog_submitted_handler(ack, body
     else:
         dao.delete_status_update(status_update_uuid)
 
+    user_id = body["user"]["id"]
+    company_uuid = get_or_create_company_by_body(body).uuid
+
     try:
         user_info = get_user_info(body["user"]["id"])
         is_admin = user_info and (user_info.is_admin or user_info.is_owner)
@@ -187,9 +221,11 @@ def home_page_my_updates_delete_status_update_dialog_submitted_handler(ack, body
         app.client.views_publish(
             user_id=body["user"]["id"],
             view=home_page_my_updates_view(
+                status_updates=dao.read_status_updates(company_uuid=company_uuid, author_slack_user_id=user_id,
+                                                       last_n=100),
+                status_update_reactions=dao.read_status_update_reactions(company_uuid),
                 is_admin=is_admin,
-                author_slack_user_id=body["user"]["id"],
-                current_user_slack_id=body["user"]["id"]
+                current_user_slack_id=user_id
             )
         )
     except Exception as e:
@@ -203,6 +239,17 @@ def home_page_company_updates_button_click_handler(ack, body, logger):
     user_id = body["user"]["id"]
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_info = get_user_info(user_id)
+    company_uuid = get_or_create_company_by_body(body).uuid
+
+    kwargs = {}
+    if user_preferences.active_project_filter:
+        kwargs["from_projects"] = [user_preferences.active_project_filter.uuid]
+    if user_preferences.active_team_filter:
+        kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
+    if user_preferences.active_department_filter:
+        kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
+    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
+
     if user_preferences.active_tab == "company_updates":
         # Something is wrong in the home_page_status_update_filters function. Even if we pass Nulls
         # instead of team and project - it doesn't reset filters, which creates inconsistency - user sees
@@ -221,9 +268,13 @@ def home_page_company_updates_button_click_handler(ack, body, logger):
         app.client.views_publish(
             user_id=user_id,
             view=home_page_company_updates_view(
+                status_updates=status_updates,
                 team=user_preferences.active_team_filter,
                 department=user_preferences.active_department_filter,
                 project=user_preferences.active_project_filter,
+                teams=dao.read_teams(company_uuid),
+                projects=dao.read_projects(company_uuid),
+                status_update_reactions=dao.read_status_update_reactions(company_uuid),
                 is_admin=user_info is not None and (user_info.is_admin or user_info.is_owner),
                 current_user_slack_id=user_id
             )
@@ -237,17 +288,23 @@ def company_updates_status_message_menu_button_clicked_handler(ack, body, logger
     logger.info(body)
 
     selected_option_value = str(body["actions"][0]["selected_option"]["value"])
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     if selected_option_value.startswith("edit_"):
         status_update_uuid = selected_option_value.split("_", maxsplit=1)[1]
-        status_update = dao.read_status_update(status_update_uuid)
+        status_update = dao.read_status_update(company_uuid=company_uuid, uuid=status_update_uuid)
         if not status_update:
             logger.error(f"Can not find status update {status_update_uuid}")
         else:
             try:
                 app.client.views_open(
                     trigger_id=body["trigger_id"],
-                    view=status_update_dialog_view(state=status_update)
+                    view=status_update_dialog_view(
+                        state=status_update,
+                        status_update_types=dao.read_status_update_types(company_uuid),
+                        projects=dao.read_projects(company_uuid),
+                        teams=dao.read_teams(company_uuid)
+                    )
                 )
             except Exception as e:
                 logger.error(f"Error opening status update model dialog: {e}")
@@ -279,17 +336,31 @@ def handle_view_submission_events(ack, body, logger):
     else:
         dao.delete_status_update(status_update_uuid)
 
-    try:
-        user_id = body["user"]["id"]
-        user_preferences = get_or_create_slack_user_preferences(user_id)
-        user_info = get_user_info(user_id)
+    company_uuid = get_or_create_company_by_body(body).uuid
+    user_id = body["user"]["id"]
+    user_preferences = get_or_create_slack_user_preferences(user_id)
+    user_info = get_user_info(user_id)
 
+    kwargs = {}
+    if user_preferences.active_project_filter:
+        kwargs["from_projects"] = [user_preferences.active_project_filter.uuid]
+    if user_preferences.active_team_filter:
+        kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
+    if user_preferences.active_department_filter:
+        kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
+    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
+
+    try:
         app.client.views_publish(
             user_id=body["user"]["id"],
             view=home_page_company_updates_view(
+                status_updates=status_updates,
                 team=user_preferences.active_team_filter,
                 department=user_preferences.active_department_filter,
                 project=user_preferences.active_project_filter,
+                teams=dao.read_teams(company_uuid),
+                projects=dao.read_projects(company_uuid),
+                status_update_reactions=dao.read_status_update_reactions(company_uuid),
                 is_admin=user_info is not None and (user_info.is_admin or user_info.is_owner),
                 current_user_slack_id=user_id
             )
@@ -305,12 +376,13 @@ def home_page_configuration_button_clicked_handler(ack, body, logger):
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_preferences.active_tab = "configuration"
     dao.insert_slack_user_preferences(user_preferences)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     try:
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_departments_view(
-                departments=dao.read_departments()
+                departments=dao.read_departments(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -325,12 +397,13 @@ def configuration_departments_button_clicked_handler(ack, body, logger):
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_preferences.active_configuration_tab = "departments"
     dao.insert_slack_user_preferences(user_preferences)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     try:
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_departments_view(
-                departments=dao.read_departments()
+                departments=dao.read_departments(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -345,12 +418,13 @@ def configuration_teams_button_clicked_handler(ack, body, logger):
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_preferences.active_configuration_tab = "teams"
     dao.insert_slack_user_preferences(user_preferences)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     try:
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_teams_view(
-                teams=dao.read_teams()
+                teams=dao.read_teams(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -360,6 +434,7 @@ def configuration_teams_button_clicked_handler(ack, body, logger):
 def home_page_configuration_projects_button_clicked_handler(ack, body, logger):
     ack()
     logger.info(body)
+    company_uuid = get_or_create_company_by_body(body).uuid
     user_id = body["user"]["id"]
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_preferences.active_configuration_tab = "projects"
@@ -369,7 +444,7 @@ def home_page_configuration_projects_button_clicked_handler(ack, body, logger):
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_projects_view(
-                projects=dao.read_projects()
+                projects=dao.read_projects(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -384,12 +459,13 @@ def configuration_status_types_button_clicked_handler(ack, body, logger):
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_preferences.active_configuration_tab = "status_types"
     dao.insert_slack_user_preferences(user_preferences)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     try:
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_status_types_view(
-                status_types=dao.read_status_update_types()
+                status_types=dao.read_status_update_types(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -420,10 +496,7 @@ def home_page_configuration_new_department_dialog_submitted_handler(ack, body, l
     if not department_name:
         raise ValueError("Department name is empty")
 
-    try:
-        company = dao.read_companies(slack_team_id=body["team"]["id"])[0]
-    except IndexError:
-        raise IndexError(f"Can not find a company with id = {body['team']['id']}") from None
+    company = get_or_create_company_by_body(body)
 
     department_uuid = body["view"]["private_metadata"]
     if department_uuid:
@@ -431,13 +504,13 @@ def home_page_configuration_new_department_dialog_submitted_handler(ack, body, l
         if not department:
             logger.error(f"Can not find department {department_uuid}")
         else:
-            departments = dao.read_departments(department_name=department_name)
+            departments = dao.read_departments(company_uuid=company.uuid, department_name=department_name)
             if departments and departments[0].uuid != department_uuid:
                 logger.error("Department with such name already exist")
             else:
                 department.name = department_name
     else:
-        if not dao.read_departments(department_name=department_name) :
+        if not dao.read_departments(company_uuid=company.uuid, department_name=department_name) :
             dao.insert_department(Department(company=company, name=department_name))
 
     user_id = body["user"]["id"]
@@ -445,7 +518,7 @@ def home_page_configuration_new_department_dialog_submitted_handler(ack, body, l
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_departments_view(
-                departments=dao.read_departments()
+                departments=dao.read_departments(company_uuid=company.uuid)
             )
         )
     except Exception as e:
@@ -457,9 +530,11 @@ def configuration_department_menu_clicked_handler(ack, body, logger):
     ack()
     logger.info(body)
     action = str(body['actions'][0]['selected_option']['value'])
+    company_uuid = get_or_create_company_by_body(body).uuid
+
     if action.startswith("edit_"):
         department_uuid = action.split("_", maxsplit=1)[1]
-        department = dao.read_department(department_uuid)
+        department = dao.read_department(company_uuid=company_uuid, uuid=department_uuid)
         if department is None:
             logger.error(f"Can not find department {department_uuid}")
         else:
@@ -472,7 +547,7 @@ def configuration_department_menu_clicked_handler(ack, body, logger):
             )
     elif action.startswith("delete_"):
         department_uuid = action.split("_", maxsplit=1)[1]
-        department = dao.read_department(department_uuid)
+        department = dao.read_department(company_uuid=company_uuid, uuid=department_uuid)
         if department is None:
             logger.error(f"Can not find department {department_uuid}")
         else:
@@ -492,19 +567,21 @@ def home_page_configuration_delete_dialog_submitted_handler(ack, body, logger):
     ack()
     logger.info(body)
     department_uuid = body["view"]["private_metadata"]
-    department = dao.read_department(department_uuid)
+    company_uuid = get_or_create_company_by_body(body).uuid
+    department = dao.read_department(company_uuid=company_uuid, uuid=department_uuid)
+
     if department is None:
         logger.error(f"Can not find department {department_uuid}")
     else:
-        for team in dao.read_teams(department_uuid=department.uuid):
-            dao.delete_team(team.uuid)
-        dao.delete_department(department.uuid)
+        for team in dao.read_teams(company_uuid=company_uuid, department_uuid=department.uuid):
+            dao.delete_team(company_uuid=company_uuid, uuid=team.uuid)
+        dao.delete_department(company_uuid=company_uuid, uuid=department.uuid)
 
     try:
         app.client.views_publish(
             user_id=body["user"]["id"],
             view=home_page_configuration_departments_view(
-                departments=dao.read_departments()
+                departments=dao.read_departments(company_uuid=department.company.uuid)
             )
         )
     except Exception as e:
@@ -514,12 +591,13 @@ def home_page_configuration_delete_dialog_submitted_handler(ack, body, logger):
 def configuration_add_new_team_clicked_handler(ack, body, logger):
     ack()
     logger.info(body)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     try:
         app.client.views_open(
             trigger_id=body["trigger_id"],
             view=home_page_configuration_add_new_team_view(
-                departments=dao.read_departments()
+                departments=dao.read_departments(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -531,8 +609,10 @@ def home_page_configuration_new_team_dialog_submitted_handler(ack, body, logger)
     ack()
     logger.info(body)
 
+    company_uuid = get_or_create_company_by_body(body).uuid
+
     team_uuid = body["view"]["private_metadata"]
-    team = dao.read_team(team_uuid)
+    team = dao.read_team(company_uuid=company_uuid, uuid=team_uuid)
 
     team_name = body["view"]["state"]["values"]["home_page_configuration_new_team_dialog_input_block"][
         "home_page_configuration_new_team_dialog_input_action"]["value"].strip()
@@ -540,7 +620,8 @@ def home_page_configuration_new_team_dialog_submitted_handler(ack, body, logger)
     department_uuid = body["view"]["state"]["values"]["home_page_configuration_new_team_dialog_input_department_block"][
         "home_page_configuration_new_team_dialog_input_department_action"]["selected_option"]["value"]
 
-    department = dao.read_department(department_uuid)
+    department = dao.read_department(company_uuid=company_uuid, uuid=department_uuid)
+
     if not department:
         logger.error(f"Can not find department {department_uuid}")
     else:
@@ -548,7 +629,7 @@ def home_page_configuration_new_team_dialog_submitted_handler(ack, body, logger)
             team.name = team_name
             team.department = department
         else:
-            team = dao.read_teams(team_name=team_name)
+            team = dao.read_teams(company_uuid=company_uuid, team_name=team_name)
             if not team:
                 dao.insert_team(Team(
                     name=team_name,
@@ -559,7 +640,7 @@ def home_page_configuration_new_team_dialog_submitted_handler(ack, body, logger)
         app.client.views_publish(
             user_id=body["user"]["id"],
             view=home_page_configuration_teams_view(
-                teams=dao.read_teams()
+                teams=dao.read_teams(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -572,10 +653,11 @@ def configuration_team_menu_clicked_handler(ack, body, logger):
     logger.info(body)
 
     action = str(body["actions"][0]["selected_option"]["value"])
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     if action.startswith("edit_"):
         team_uuid = action.split("_", maxsplit=1)[1]
-        team = dao.read_team(team_uuid)
+        team = dao.read_team(company_uuid=company_uuid, uuid=team_uuid)
         if not team:
             logger.error(f"Can not find a team {team_uuid}")
         else:
@@ -586,14 +668,14 @@ def configuration_team_menu_clicked_handler(ack, body, logger):
                         team_uuid=team.uuid,
                         team_name=team.name,
                         department_uuid=team.department.uuid,
-                        departments=dao.read_departments()
+                        departments=dao.read_departments(company_uuid=company_uuid)
                     )
                 )
             except Exception as e:
                 logger.error(f"Error opening add new team dialog: {e}")
     elif action.startswith("delete_"):
         team_uuid = action.split("_", maxsplit=1)[1]
-        team = dao.read_team(team_uuid)
+        team = dao.read_team(company_uuid=company_uuid, uuid=team_uuid)
         if not team:
             logger.error(f"Can not find a team {team_uuid}")
         else:
@@ -614,17 +696,19 @@ def home_page_configuration_delete_team_dialog_submitted_handler(ack, body, logg
     logger.info(body)
 
     team_uuid = body["view"]["private_metadata"]
-    team = dao.read_team(team_uuid)
+    company_uuid = get_or_create_company_by_body(body).uuid
+    team = dao.read_team(company_uuid=company_uuid, uuid=team_uuid)
+
     if team is None:
         logger.error(f"Can not find team {team_uuid}")
     else:
-        dao.delete_team(team_uuid)
+        dao.delete_team(company_uuid=company_uuid, uuid=team_uuid)
 
     try:
         app.client.views_publish(
             user_id=body["user"]["id"],
             view=home_page_configuration_teams_view(
-                teams=dao.read_teams()
+                teams=dao.read_teams(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -635,6 +719,9 @@ def home_page_configuration_delete_team_dialog_submitted_handler(ack, body, logg
 def home_page_select_team_filter_change_handler(ack, body, logger):
     ack()
     logger.info(body)
+
+    company_uuid = get_or_create_company_by_body(body).uuid
+
     try:
         team, department, project = retrieve_status_update_filters_from_view(body)
         user_id = body["user"]["id"]
@@ -644,12 +731,29 @@ def home_page_select_team_filter_change_handler(ack, body, logger):
         user_preferences.active_project_filter = project
         dao.insert_status_update(user_preferences)
         user_info = get_user_info(user_id)
+
+        kwargs = {}
+        if user_preferences.active_project_filter:
+            kwargs["from_projects"] = [user_preferences.active_project_filter.uuid]
+        if user_preferences.active_team_filter:
+            kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
+        if user_preferences.active_department_filter:
+            kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
+        status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
+
         app.client.views_publish(
             user_id=user_id,
-            view=home_page_company_updates_view(team=team, department=department, project=project,
-                                                is_admin=user_info is not None and (user_info.is_admin
-                                                                                    or user_info.is_owner),
-                                                current_user_slack_id=user_id)
+            view=home_page_company_updates_view(
+                status_updates=status_updates,
+                team=user_preferences.active_team_filter,
+                department=user_preferences.active_department_filter,
+                project=user_preferences.active_project_filter,
+                teams=dao.read_teams(company_uuid),
+                projects=dao.read_projects(company_uuid),
+                status_update_reactions=dao.read_status_update_reactions(company_uuid),
+                is_admin=user_info is not None and (user_info.is_admin or user_info.is_owner),
+                current_user_slack_id=user_id
+            )
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -666,10 +770,11 @@ def configuration_project_menu_clicked_handler(ack, body, logger):
     logger.info(body)
 
     action = str(body["actions"][0]["selected_option"]["value"])
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     if action.startswith("edit_"):
         project_uuid = action.split("_", maxsplit=1)[1]
-        project = dao.read_project(project_uuid)
+        project = dao.read_project(company_uuid=company_uuid, uuid=project_uuid)
         if not project:
             logger.error(f"Can not find a project {project_uuid}")
         else:
@@ -685,7 +790,7 @@ def configuration_project_menu_clicked_handler(ack, body, logger):
                 logger.error(f"Error opening add new project dialog: {e}")
     elif action.startswith("delete_"):
         project_uuid = action.split("_", maxsplit=1)[1]
-        project = dao.read_project(project_uuid)
+        project = dao.read_project(company_uuid=company_uuid, uuid=project_uuid)
         if not project:
             logger.error(f"Can not find a project {project_uuid}")
         else:
@@ -724,25 +829,22 @@ def home_page_configuration_new_project_dialog_submitted_handler(ack, body, logg
     if not project_name:
         raise ValueError("Project name is empty")
 
-    try:
-        company = dao.read_companies(slack_team_id=body["team"]["id"])[0]
-    except IndexError:
-        raise IndexError(f"Can not find a company with id = {body['team']['id']}") from None
+    company = get_or_create_company_by_body(body)
 
     project_uuid = body["view"]["private_metadata"]
     if project_uuid:
-        project = dao.read_project(project_uuid)
+        project = dao.read_project(company_uuid=company.uuid, uuid=project_uuid)
         if not project:
             logger.error(f"Can not find project {project_uuid}")
         else:
-            projects = dao.read_projects(project_name=project_name)
+            projects = dao.read_projects(company_uuid=company.uuid, project_name=project_name)
             if projects and projects[0].uuid != project_uuid:
                 logger.error("Project with such name already exist")
             else:
                 project.name = project_name
                 project.deleted = False
     else:
-        if not dao.read_projects(project_name=project_name) :
+        if not dao.read_projects(company_uuid=company.uuid, project_name=project_name) :
             dao.insert_department(Project(company=company, name=project_name))
 
     user_id = body["user"]["id"]
@@ -750,7 +852,7 @@ def home_page_configuration_new_project_dialog_submitted_handler(ack, body, logg
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_projects_view(
-                projects=dao.read_projects()
+                projects=dao.read_projects(company_uuid=company.uuid)
             )
         )
     except Exception as e:
@@ -761,19 +863,20 @@ def home_page_configuration_new_project_dialog_submitted_handler(ack, body, logg
 def home_page_configuration_delete_project_dialog_submitted_handler(ack, body, logger):
     ack()
     logger.info(body)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     project_uuid = body["view"]["private_metadata"]
-    project = dao.read_project(project_uuid)
+    project = dao.read_project(company_uuid=company_uuid, uuid=project_uuid)
     if project is None:
         logger.error(f"Can not find project {project_uuid}")
     else:
-        dao.delete_project(project_uuid)
+        dao.delete_project(company_uuid=company_uuid, uuid=project_uuid)
 
     try:
         app.client.views_publish(
             user_id=body["user"]["id"],
             view=home_page_configuration_projects_view(
-                projects=dao.read_projects()
+                projects=dao.read_projects(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -799,10 +902,11 @@ def configuration_status_type_menu_clicked_handler(ack, body, logger):
     logger.info(body)
 
     action = str(body["actions"][0]["selected_option"]["value"])
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     if action.startswith("edit_"):
         status_update_type_uuid = action.split("_", maxsplit=1)[1]
-        status_update_type = dao.read_status_update_type(status_update_type_uuid)
+        status_update_type = dao.read_status_update_type(company_uuid=company_uuid, uuid=status_update_type_uuid)
         if not status_update_type:
             logger.error(f"Can not find a status update type {status_update_type_uuid}")
         else:
@@ -819,7 +923,7 @@ def configuration_status_type_menu_clicked_handler(ack, body, logger):
                 logger.error(f"Error opening add new status update type dialog: {e}")
     elif action.startswith("delete_"):
         status_update_type_uuid = action.split("_", maxsplit=1)[1]
-        status_update_type = dao.read_status_update_type(status_update_type_uuid)
+        status_update_type = dao.read_status_update_type(company_uuid=company_uuid, uuid=status_update_type_uuid)
         if not status_update_type:
             logger.error(f"Can not find a status update type {status_update_type_uuid}")
         else:
@@ -858,11 +962,11 @@ def home_page_configuration_new_status_update_type_dialog_submitted_handler(ack,
 
     status_update_type_uuid = body["view"]["private_metadata"]
     if status_update_type_uuid:
-        status_update_type = dao.read_status_update_type(status_update_type_uuid)
+        status_update_type = dao.read_status_update_type(company_uuid=company.uuid, uuid=status_update_type_uuid)
         if not status_update_type:
             logger.error(f"Can not find status update type {status_update_type_uuid}")
         else:
-            status_update_types = dao.read_status_update_types(name=status_update_type_name)
+            status_update_types = dao.read_status_update_types(company_uuid=company.uuid, name=status_update_type_name)
             if status_update_types and status_update_types[0].uuid != status_update_type_uuid:
                 logger.error("Status update type with such name already exist")
             else:
@@ -870,7 +974,7 @@ def home_page_configuration_new_status_update_type_dialog_submitted_handler(ack,
                 status_update_type.name = status_update_type_name
                 status_update_type.deleted = False
     else:
-        if not dao.read_status_update_types(name=status_update_type_name) :
+        if not dao.read_status_update_types(company_uuid=company.uuid, name=status_update_type_name) :
             dao.insert_status_update_type(StatusUpdateType(company=company, name=status_update_type_name,
                                                            emoji=status_update_type_emoji))
 
@@ -879,7 +983,7 @@ def home_page_configuration_new_status_update_type_dialog_submitted_handler(ack,
         app.client.views_publish(
             user_id=user_id,
             view=home_page_configuration_status_types_view(
-                status_types=dao.read_status_update_types()
+                status_types=dao.read_status_update_types(company_uuid=company.uuid)
             )
         )
     except Exception as e:
@@ -890,19 +994,20 @@ def home_page_configuration_new_status_update_type_dialog_submitted_handler(ack,
 def home_page_configuration_delete_status_update_type_dialog_submitted_handler(ack, body, logger):
     ack()
     logger.info(body)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     status_update_type_uuid = body["view"]["private_metadata"]
-    status_update_type = dao.read_status_update_type(status_update_type_uuid)
+    status_update_type = dao.read_status_update_type(uuid=status_update_type_uuid, company_uuid=company_uuid)
     if status_update_type is None:
         logger.error(f"Can not find status update type {status_update_type_uuid}")
     else:
-        dao.delete_status_update_type(status_update_type_uuid)
+        dao.delete_status_update_type(uuid=status_update_type_uuid, company_uuid=company_uuid)
 
     try:
         app.client.views_publish(
             user_id=body["user"]["id"],
             view=home_page_configuration_status_types_view(
-                status_types=dao.read_status_update_types()
+                status_types=dao.read_status_update_types(company_uuid=company_uuid)
             )
         )
     except Exception as e:
@@ -912,13 +1017,21 @@ def home_page_configuration_delete_status_update_type_dialog_submitted_handler(a
 @app.action("share_status_update_button_clicked")
 def share_status_update_button_click_handler(ack, body, logger):
     ack()
+    company_uuid = get_or_create_company_by_body(body).uuid
+
     try:
         app.client.views_open(
             trigger_id=body["trigger_id"],
-            view=status_update_dialog_view(state=dao.read_last_unpublished_status_update(
-                author_slack_user_id=body["user"]["id"],
-                source=StatusUpdateSource.SLACK_DIALOG
-            )),
+            view=status_update_dialog_view(
+                status_update_types=dao.read_status_update_types(company_uuid=company_uuid),
+                projects=dao.read_projects(company_uuid=company_uuid),
+                teams=dao.read_teams(company_uuid=company_uuid),
+                state=dao.read_last_unpublished_status_update(
+                    company_uuid=company_uuid,
+                    author_slack_user_id=body["user"]["id"],
+                    source=StatusUpdateSource.SLACK_DIALOG
+                )
+            ),
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -928,7 +1041,8 @@ def share_status_update_button_click_handler(ack, body, logger):
 def status_update_preview_button_click_handler(ack, body, logger):
     ack()
     status_update = retrieve_status_update_from_view(body)
-    existing_status_update = dao.read_status_update(status_update.uuid)
+    company = get_or_create_company_by_body(body)
+    existing_status_update = dao.read_status_update(company_uuid=company.uuid, uuid=status_update.uuid)
     user_info = get_user_info(status_update.author_slack_user_id)
     show_preview = True
 
@@ -961,9 +1075,14 @@ def status_update_preview_button_click_handler(ack, body, logger):
             app.client.views_publish(
                 user_id=body["user"]["id"],
                 view=home_page_my_updates_view(
+                    status_updates=dao.read_status_updates(
+                        company_uuid=company.uuid,
+                        author_slack_user_id=status_update.author_slack_user_id,
+                        last_n=100
+                    ),
+                    status_update_reactions=dao.read_status_update_reactions(company.uuid),
                     is_admin=is_admin,
-                    author_slack_user_id=body["user"]["id"],
-                    current_user_slack_id=body["user"]["id"]
+                    current_user_slack_id=status_update.author_slack_user_id
                 )
             )
         except Exception as e:
@@ -973,13 +1092,22 @@ def status_update_preview_button_click_handler(ack, body, logger):
 @app.action("status_update_preview_back_to_editing_clicked")
 def status_update_preview_back_to_editing_click_handler(ack, body, logger):
     ack()
-    status_update = dao.read_status_update(retrieve_private_metadata_from_view(body).status_update_uuid)
+    company_uuid = get_or_create_company_by_body(body).uuid
+    status_update = dao.read_status_update(
+        company_uuid=company_uuid,
+        uuid=retrieve_private_metadata_from_view(body).status_update_uuid
+    )
 
     try:
         app.client.views_update(
             trigger_id=body["trigger_id"],
             view_id=body["view"]["id"],
-            view=status_update_dialog_view(state=status_update),
+            view=status_update_dialog_view(
+                status_update_types=dao.read_status_update_types(company_uuid=company_uuid),
+                teams=dao.read_teams(company_uuid=company_uuid),
+                projects=dao.read_projects(company_uuid=company_uuid),
+                state=status_update
+            ),
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
@@ -988,7 +1116,11 @@ def status_update_preview_back_to_editing_click_handler(ack, body, logger):
 @app.view("status_update_preview_share_button_clicked")
 def status_update_preview_share_button_click_handler(ack, body, logger):
     ack()
-    dao.publish_status_update(retrieve_private_metadata_from_view(body).status_update_uuid)
+    company = get_or_create_company_by_body(body)
+    dao.publish_status_update(
+        company_uuid=company.uuid,
+        uuid=retrieve_private_metadata_from_view(body).status_update_uuid
+    )
 
 
 @app.event("message")
@@ -1024,6 +1156,8 @@ def status_update_message_preview_team_select_handler(ack, body, logger):
     logger.info(body)
     status_update_uuid = body["message"]["metadata"]["event_payload"]["status_update_uuid"]
     slack_team_id = body["team"]["id"]
+    company_uuid = get_or_create_company_by_body(body).uuid
+
     try:
         company = dao.read_companies(slack_team_id=slack_team_id)[0]
     except IndexError:
@@ -1036,14 +1170,15 @@ def status_update_message_preview_team_select_handler(ack, body, logger):
             published=False,
             company=company
         )
-    status_update.teams = [dao.read_team(team["value"]) for team in body["state"]["values"][
+    status_update.teams = [dao.read_team(company_uuid=company_uuid, uuid=team["value"])
+                           for team in body["state"]["values"][
         "status_update_preview_teams_list"]["status_update_message_preview_team_selected"]["selected_options"]]
     status_update.projects = [dao.read_project(project["value"]) for project in body["state"]["values"][
         "status_update_preview_projects_list"]["status_update_message_preview_project_selected"]["selected_options"]]
     try:
         status_update_type_uuid = body["state"]["values"]["status_update_preview_status_update_type"][
             "status_update_message_preview_status_update_type_selected"]["selected_option"]["value"]
-        status_update.type = dao.read_status_update_type(status_update_type_uuid)
+        status_update.type = dao.read_status_update_type(company_uuid=company_uuid, uuid=status_update_type_uuid)
     except TypeError:
         status_update.type = None
     dao.insert_status_update(status_update)

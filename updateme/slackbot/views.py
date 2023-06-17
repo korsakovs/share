@@ -12,8 +12,9 @@ from updateme.slackbot.blocks import status_update_type_block, status_update_tea
     home_page_status_update_filters, status_update_blocks, status_update_discuss_link_block, \
     home_page_configuration_actions_block
 from updateme.core import dao
-from updateme.core.model import StatusUpdate, Project, Team, StatusUpdateSource, Department, StatusUpdateType
-from updateme.slackbot.utils import es
+from updateme.core.model import StatusUpdate, Project, Team, StatusUpdateSource, Department, StatusUpdateType, \
+    StatusUpdateReaction
+from updateme.slackbot.utils import es, get_or_create_company_by_body
 
 STATUS_UPDATE_TYPE_BLOCK = "status_update_type_block"
 STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID = "status_update_modal__status_update_type_action_id"
@@ -62,6 +63,7 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
     user_id = body["user"]["id"]
     user_name = body["user"]["name"]
     private_metadata = retrieve_private_metadata_from_view(body)
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     selected_type = values[STATUS_UPDATE_TYPE_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID][
         "selected_option"]
@@ -72,13 +74,15 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
     selected_teams = values[STATUS_UPDATE_TEAMS_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID][
         "selected_options"]
     if selected_teams is not None:
-        teams = [dao.read_team(selected_team["value"]) for selected_team in selected_teams]
+        teams = [dao.read_team(company_uuid=company_uuid, uuid=selected_team["value"])
+                 for selected_team in selected_teams]
 
     projects = []
     selected_projects = values[STATUS_UPDATE_PROJECTS_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_PROJECTS_ACTION_ID][
         "selected_options"]
     if selected_projects is not None:
-        projects = [dao.read_project(selected_project["value"]) for selected_project in selected_projects]
+        projects = [dao.read_project(company_uuid=company_uuid, uuid=selected_project["value"])
+                    for selected_project in selected_projects]
 
     try:
         discuss_link = values[STATUS_UPDATE_DISCUSS_LINK_BLOCK][
@@ -112,27 +116,29 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
 
 def retrieve_status_update_filters_from_view(body) -> Tuple[Optional[Team], Optional[Department], Optional[Project]]:
     values = body["view"]["state"]["values"]["status_updates_filter_block"]
+    company_uuid = get_or_create_company_by_body(body).uuid
 
     team, department, project = None, None, None
 
     try:
         team_or_department_id = values["home_page_select_team_filter_changed"]["selected_option"]["value"]
-        team = dao.read_team(team_or_department_id)
+        team = dao.read_team(company_uuid=company_uuid, uuid=team_or_department_id)
         if team is None:
-            department = dao.read_department(team_or_department_id)
+            department = dao.read_department(company_uuid=company_uuid, uuid=team_or_department_id)
     except KeyError:
         pass
 
     try:
         project_id = values["home_page_select_project_filter_changed"]["selected_option"]["value"]
-        project = dao.read_project(project_id)
+        project = dao.read_project(company_uuid=company_uuid, uuid=project_id)
     except KeyError:
         pass
 
     return team, department, project
 
 
-def status_update_dialog_view(state: StatusUpdate = None) -> View:
+def status_update_dialog_view(status_update_types: List[StatusUpdateType], teams: List[Team], projects: List[Project],
+                              state: StatusUpdate = None) -> View:
     return View(
         type="modal",
         callback_id="status_update_preview_button_clicked",
@@ -141,16 +147,16 @@ def status_update_dialog_view(state: StatusUpdate = None) -> View:
         close="Cancel",
         private_metadata=str(PrivateMetadata(status_update_uuid=None if state is None else state.uuid)),
         blocks=[
-            status_update_type_block(dao.read_status_update_types(),
+            status_update_type_block(status_update_types,
                                      selected_value=None if state is None or state.type is None else state.type,
                                      block_id=STATUS_UPDATE_TYPE_BLOCK,
                                      action_id=STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID),
             DividerBlock(),
-            status_update_teams_block(dao.read_teams(),
+            status_update_teams_block(teams,
                                       selected_options=None if state is None else [team for team in state.teams],
                                       block_id=STATUS_UPDATE_TEAMS_BLOCK,
                                       action_id=STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID),
-            status_update_projects_block(dao.read_projects(),
+            status_update_projects_block(projects,
                                          selected_options=None if state is None
                                          else [project for project in state.projects],
                                          block_id=STATUS_UPDATE_PROJECTS_BLOCK,
@@ -182,15 +188,16 @@ def share_status_update_preview_view(update: StatusUpdate) -> View:
     )
 
 
-def home_page_my_updates_view(author_slack_user_id: str, is_admin: bool = False, current_user_slack_id: str = None):
+def home_page_my_updates_view(status_updates: List[StatusUpdate], status_update_reactions: List[StatusUpdateReaction],
+                              is_admin: bool = False, current_user_slack_id: str = None):
     return View(
         type="home",
         title="Welcome to Chirik Bot!",
         blocks=[
             home_page_actions_block(selected="my_updates", show_configuration=is_admin),
             DividerBlock(),
-            *status_update_list_blocks(dao.read_status_updates(author_slack_user_id=author_slack_user_id, last_n=100),
-                                       dao.read_status_update_reactions(),
+            *status_update_list_blocks(status_updates,
+                                       status_update_reactions,
                                        current_user_slack_id=current_user_slack_id,
                                        accessory_action_id="my_updates_status_message_menu_button_clicked")
         ]
@@ -214,16 +221,11 @@ def home_page_my_updates_delete_status_update_view(status_update_uuid: str, stat
 
 
 
-def home_page_company_updates_view(team: Team = None, department: Department = None, project: Project = None,
+def home_page_company_updates_view(status_updates: List[StatusUpdate],
+                                   status_update_reactions: List[StatusUpdateReaction], teams: List[Team],
+                                   projects: List[Project], team: Team = None, department: Department = None,
+                                   project: Project = None,
                                    is_admin: bool = False, current_user_slack_id: str = None):
-    kwargs = {}
-    if project:
-        kwargs["from_projects"] = [project.uuid]
-    if team:
-        kwargs["from_teams"] = [team.uuid]
-    if department:
-        kwargs["from_departments"] = [department.uuid]
-
     return View(
         type="home",
         title="Welcome to Chirik Bot!",
@@ -231,15 +233,15 @@ def home_page_company_updates_view(team: Team = None, department: Department = N
             home_page_actions_block(selected="company_updates", show_configuration=is_admin),
             DividerBlock(),
             home_page_status_update_filters(
-                teams=dao.read_teams(),
-                projects=dao.read_projects(),
+                teams=teams,
+                projects=projects,
                 active_team=team,
                 active_department=department,
                 active_project=project
             ),
             DividerBlock(),
-            *status_update_list_blocks(dao.read_status_updates(last_n=100, **kwargs),
-                                       dao.read_status_update_reactions(),
+            *status_update_list_blocks(status_updates,
+                                       status_update_reactions,
                                        current_user_slack_id=current_user_slack_id,
                                        accessory_action_id="company_updates_status_message_menu_button_clicked")
         ]

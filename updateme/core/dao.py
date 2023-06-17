@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
-from sqlalchemy import create_engine, or_, false, true, desc, Enum
+from sqlalchemy import create_engine, and_, or_, false, true, desc, Enum
 from sqlalchemy import Boolean
 from sqlalchemy import Column
 from sqlalchemy import DateTime
@@ -22,7 +22,7 @@ from sqlalchemy.pool import NullPool
 
 from updateme.core.model import Company, Project, StatusUpdate, StatusUpdateType, Team, SlackUserPreferences, \
     StatusUpdateImage, StatusUpdateSource, StatusUpdateReaction, Department
-from updateme.core.config import TEAM_NAMES, PROJECT_NAMES, STATUS_UPDATE_TYPES, REACTIONS, get_active_dao_type, \
+from updateme.core.config import INITIAL_TEAM_NAMES, INITIAL_PROJECT_NAMES, INITIAL_STATUS_UPDATE_TYPES, INITIAL_REACTIONS, get_active_dao_type, \
     DaoType
 
 
@@ -31,12 +31,13 @@ class Dao(ABC):
     def insert_status_update(self, status_update: StatusUpdate): ...
 
     @abstractmethod
-    def publish_status_update(self, uuid: str) -> bool: ...
+    def publish_status_update(self, company_uuid: str, uuid: str) -> bool: ...
 
-    def read_last_unpublished_status_update(self, author_slack_user_id: str,
+    def read_last_unpublished_status_update(self, company_uuid: str, author_slack_user_id: str,
                                             no_older_than: timedelta = timedelta(days=2),
                                             source: StatusUpdateSource = None) -> Optional[StatusUpdate]:
         updates = self.read_status_updates(
+            company_uuid=company_uuid,
             created_after=datetime.utcnow() - no_older_than,
             author_slack_user_id=author_slack_user_id,
             published=False,
@@ -46,32 +47,32 @@ class Dao(ABC):
             return max(updates, key=lambda update: update.created_at)
 
     @abstractmethod
-    def read_status_update(self, uuid: str) -> Optional[StatusUpdate]: ...
+    def read_status_update(self, company_uuid: str, uuid: str) -> Optional[StatusUpdate]: ...
 
     @abstractmethod
-    def read_status_updates(self, created_after: datetime = None, created_before: datetime = None,
+    def read_status_updates(self, company_uuid: str, created_after: datetime = None, created_before: datetime = None,
                             from_teams: List[str] = None, from_projects: List[str] = None,
                             with_types: List[str] = None, published: Optional[bool] = True,
                             deleted: Optional[bool] = False, author_slack_user_id: str = None,
                             last_n: int = None, source: StatusUpdateSource = None) -> List[StatusUpdate]: ...
 
     @abstractmethod
-    def delete_status_update(self, uuid: str): ...
+    def delete_status_update(self, company_uuid: str, uuid: str): ...
 
     @abstractmethod
-    def delete_team_status_updates(self, team_uuid: str): ...
+    def delete_team_status_updates(self, company_uuid: str, team_uuid: str): ...
 
     @abstractmethod
     def insert_team(self, team: Team): ...
 
     @abstractmethod
-    def read_team(self, uuid: str) -> Optional[Team]: ...
+    def read_team(self, company_uuid: str, uuid: str) -> Optional[Team]: ...
 
     @abstractmethod
-    def read_teams(self, team_name: str = None, department_uuid: str = None) -> List[Team]: ...
+    def read_teams(self, company_uuid: str, team_name: str = None, department_uuid: str = None) -> List[Team]: ...
 
     @abstractmethod
-    def delete_team(self, uuid: str): ...
+    def delete_team(self, company_uuid: str, uuid: str): ...
 
     @abstractmethod
     def insert_company(self, company: Company): ...
@@ -86,37 +87,37 @@ class Dao(ABC):
     def insert_department(self, department: Department): ...
 
     @abstractmethod
-    def read_department(self, uuid: str) -> Optional[Department]: ...
+    def read_department(self, company_uuid: str, uuid: str) -> Optional[Department]: ...
 
     @abstractmethod
-    def read_departments(self, department_name: str = None) -> List[Department]: ...
+    def read_departments(self, company_uuid: str, department_name: str = None) -> List[Department]: ...
 
     @abstractmethod
-    def delete_department(self, uuid: str): ...
+    def delete_department(self, company_uuid: str, uuid: str): ...
 
     @abstractmethod
     def insert_project(self, project: Project): ...
 
     @abstractmethod
-    def read_project(self, uuid: str) -> Optional[Project]: ...
+    def read_project(self, company_uuid: str, uuid: str) -> Optional[Project]: ...
 
     @abstractmethod
-    def read_projects(self, project_name: str = None) -> List[Project]: ...
+    def read_projects(self, company_uuid: str, project_name: str = None) -> List[Project]: ...
 
     @abstractmethod
-    def delete_project(self, uuid: str): ...
+    def delete_project(self, company_uuid: str, uuid: str): ...
 
     @abstractmethod
     def insert_status_update_type(self, status_update_type: StatusUpdateType): ...
 
     @abstractmethod
-    def read_status_update_type(self, uuid: str) -> Optional[StatusUpdateType]: ...
+    def read_status_update_type(self, company_uuid: str, uuid: str) -> Optional[StatusUpdateType]: ...
 
     @abstractmethod
-    def read_status_update_types(self) -> List[StatusUpdateType]: ...
+    def read_status_update_types(self, company_uuid: str, name: str = None) -> List[StatusUpdateType]: ...
 
     @abstractmethod
-    def delete_status_update_type(self, uuid: str): ...
+    def delete_status_update_type(self, company_uuid: str, uuid: str): ...
 
     @abstractmethod
     def read_slack_user_preferences(self, user_id: str) -> Optional[SlackUserPreferences]: ...
@@ -128,7 +129,7 @@ class Dao(ABC):
     def insert_status_update_reaction(self, status_update_reaction: StatusUpdateReaction): ...
 
     @abstractmethod
-    def read_status_update_reactions(self) -> List[StatusUpdateReaction]: ...
+    def read_status_update_reactions(self, company_uuid: str) -> List[StatusUpdateReaction]: ...
 
 
 class SQLAlchemyDao(Dao, ABC):
@@ -332,8 +333,8 @@ class SQLAlchemyDao(Dao, ABC):
     def insert_status_update(self, status_update: StatusUpdate):
         self._set_obj(status_update)
 
-    def publish_status_update(self, uuid: str) -> bool:
-        status_update = self.read_status_update(uuid)
+    def publish_status_update(self, company_uuid: str, uuid: str) -> bool:
+        status_update = self.read_status_update(company_uuid=company_uuid, uuid=uuid)
         if status_update:
             status_update.published = True
             self._set_obj(status_update)
@@ -341,17 +342,20 @@ class SQLAlchemyDao(Dao, ABC):
         else:
             return False
 
-    def read_status_update(self, uuid: str) -> Optional[StatusUpdate]:
-        return self._get_obj(StatusUpdate, uuid)
+    def read_status_update(self, company_uuid: str, uuid: str) -> Optional[StatusUpdate]:
+        status_update: StatusUpdate = self._get_obj(StatusUpdate, uuid)
+        if status_update and status_update.company.uuid == company_uuid:
+            return status_update
 
-    def read_status_updates(self, created_after: datetime = None, created_before: datetime = None,
+    def read_status_updates(self, company_uuid: str, created_after: datetime = None, created_before: datetime = None,
                             from_teams: List[str] = None, from_departments: List[str] = None,
                             from_projects: List[str] = None, with_types: List[str] = None,
                             published: Optional[bool] = True, deleted: Optional[bool] = False,
                             author_slack_user_id: str = None, last_n: int = None, source: StatusUpdateSource = None) \
             -> List[StatusUpdate]:
         with self._get_session() as session:
-            result = session.query(StatusUpdate)
+            result = session.query(StatusUpdate).join(Company)
+            result = result.filter(Company.uuid == company_uuid)
 
             if created_after:
                 result = result.filter(StatusUpdate.created_at >= created_after)
@@ -390,6 +394,7 @@ class SQLAlchemyDao(Dao, ABC):
             if source is not None:
                 result = result.filter(StatusUpdate.source == source)
 
+            # noinspection PyTypeChecker
             result = result.order_by(desc(StatusUpdate.created_at))
 
             if last_n is not None:
@@ -397,15 +402,17 @@ class SQLAlchemyDao(Dao, ABC):
 
             return result.distinct().all()
 
-    def delete_status_update(self, uuid: str):
+    def delete_status_update(self, company_uuid: str, uuid: str):
         with self._get_session() as session:
-            session.query(StatusUpdate).filter(StatusUpdate.uuid == uuid).update({
+            session.query(StatusUpdate).join(Company).filter(
+                and_(StatusUpdate.uuid == uuid, Company.uuid == company_uuid)).update(
+            {
                 StatusUpdate.deleted: True
             }, synchronize_session=False)
 
-    def delete_team_status_updates(self, team_uuid: str):
+    def delete_team_status_updates(self, company_uuid: str, team_uuid: str):
         with self._get_session() as session:
-            session.query(StatusUpdate).filter(
+            session.query(StatusUpdate).join(Company).filter(Company.uuid == company_uuid).filter(
                 StatusUpdate.uuid.in_(
                     session.query(StatusUpdate.uuid)
                         .join(self._status_update_teams_association_table).join(Team).filter(Team.uuid == team_uuid)
@@ -417,23 +424,31 @@ class SQLAlchemyDao(Dao, ABC):
     def insert_team(self, team: Team):
         self._set_obj(team)
 
-    def read_team(self, uuid: str) -> Optional[Team]:
-        return self._get_obj(Team, uuid)
+    def read_team(self, company_uuid: str, uuid: str) -> Optional[Team]:
+        team: Team = self._get_obj(Team, uuid)
+        if team and team.department.company.uuid == company_uuid:
+            return team
 
-    def read_teams(self, team_name: str = None, department_uuid: str = None) -> List[Team]:
+    def read_teams(self, company_uuid: str, team_name: str = None, department_uuid: str = None) -> List[Team]:
         with self._get_session() as session:
-            result = session.query(Team).filter(Team.deleted == false())
+            result = session.query(Team).join(Department).join(Company)\
+                .filter(Team.deleted == false())\
+                .filter(Department.deleted == false())\
+                .filter(Company.deleted == false())\
+                .filter(Company.uuid == company_uuid)
             if team_name is not None:
                 result = result.filter(Team.name == team_name)
             if department_uuid is not None:
-                result = result.join(Department).filter(Department.uuid == department_uuid)
+                result = result.filter(Department.uuid == department_uuid)
             return result.distinct().all()
 
-    def delete_team(self, uuid: str):
+    def delete_team(self, company_uuid: str, uuid: str):
         with self._get_session() as session:
-            session.query(Team).filter(Team.uuid == uuid).update({
+            session.query(Team).filter(and_(Team.uuid == uuid, Team.uuid.in_(
+                session.query(Team.uuid).join(Department).join(Company).filter(Company.uuid == company_uuid)
+            ))).update({
                 Team.deleted: True
-            }, synchronize_session=False)
+            })
 
     def insert_company(self, company: Company):
         self._set_obj(company)
@@ -453,58 +468,73 @@ class SQLAlchemyDao(Dao, ABC):
     def insert_department(self, department: Department):
         self._set_obj(department)
 
-    def read_department(self, uuid: str) -> Optional[Department]:
-        return self._get_obj(Department, uuid)
+    def read_department(self, company_uuid: str, uuid: str) -> Optional[Department]:
+        department: Department = self._get_obj(Department, uuid)
+        if department and department.company.uuid == company_uuid:
+            return department
 
-    def read_departments(self, department_name: str = None) -> List[Department]:
+    def read_departments(self, company_uuid: str, department_name: str = None) -> List[Department]:
         with self._get_session() as session:
-            result = session.query(Department).filter(Department.deleted == false())
+            result = session.query(Department).join(Company).filter(Department.deleted == false())\
+                .filter(Company.uuid == company_uuid)
             if department_name is not None:
                 result = result.filter(Department.name == department_name)
             return result.all()
 
-    def delete_department(self, uuid: str):
+    def delete_department(self, company_uuid: str, uuid: str):
         with self._get_session() as session:
-            session.query(Department).filter(Department.uuid == uuid).update({
-                Department.deleted: True
-            }, synchronize_session=False)
+            session.query(Department).filter(and_(Department.uuid == uuid, Department.uuid.in_(
+                    session.query(Department.uuid).join(Company).filter(Company.uuid == company_uuid)
+                ))).update({
+                    Department.deleted: True
+                }, synchronize_session=False)
 
     def insert_project(self, project: Project):
         self._set_obj(project)
 
-    def read_project(self, uuid: str) -> Optional[Project]:
-        return self._get_obj(Project, uuid)
+    def read_project(self, company_uuid: str, uuid: str) -> Optional[Project]:
+        project: Project = self._get_obj(Project, uuid)
+        if project and project.company.uuid == company_uuid:
+            return project
 
-    def read_projects(self, project_name: str = None) -> List[Project]:
+    def read_projects(self, company_uuid: str, project_name: str = None) -> List[Project]:
         with self._get_session() as session:
-            result = session.query(Project).filter(Project.deleted == false())
+            result = session.query(Project).join(Company).filter(and_(Project.deleted == false(),
+                                                                      Company.uuid == company_uuid))
             if project_name is not None:
                 result = result.filter(Project.name == project_name)
             return result.all()
 
-    def delete_project(self, uuid: str):
+    def delete_project(self, company_uuid: str, uuid: str):
         with self._get_session() as session:
-            session.query(Project).filter(Project.uuid == uuid).update({
+            session.query(Project).filter(and_(Project.uuid == uuid, Project.uuid.in_(
+                session.query(Project.uuid).join(Company).filter(Company.uuid == company_uuid)
+            ))).update({
                 Project.deleted: True
             }, synchronize_session=False)
 
     def insert_status_update_type(self, status_update_type: StatusUpdateType):
         self._set_obj(status_update_type)
 
-    def read_status_update_type(self, uuid: str) -> Optional[StatusUpdateType]:
-        return self._get_obj(StatusUpdateType, uuid)
+    def read_status_update_type(self, company_uuid: str, uuid: str) -> Optional[StatusUpdateType]:
+        status_update_type: StatusUpdateType = self._get_obj(StatusUpdateType, uuid)
+        if status_update_type and status_update_type.company.uuid == company_uuid:
+            return status_update_type
 
-    def read_status_update_types(self, name: str = None) -> List[StatusUpdateType]:
+    def read_status_update_types(self, company_uuid: str, name: str = None) -> List[StatusUpdateType]:
         with self._get_session() as session:
             result = session.query(StatusUpdateType).filter(StatusUpdateType.deleted == false())
+            result = result.join(Company).filter(Company.uuid == company_uuid)
             if name:
                 result = result.filter(StatusUpdateType.name == name)
             return result.all()
 
-    def delete_status_update_type(self, uuid: str):
+    def delete_status_update_type(self, company_uuid: str, uuid: str):
         with self._get_session() as session:
-            session.query(StatusUpdateType).filter(StatusUpdateType.uuid == uuid).update({
-                StatusUpdateType.deleted: True
+            session.query(StatusUpdateType).filter(and_(StatusUpdateType.uuid == uuid, StatusUpdateType.uuid.in_(
+                session.query(StatusUpdateType.uuid).join(Company).filter(Company.uuid == company_uuid)
+            ))).update({
+                StatusUpdate.deleted: True
             }, synchronize_session=False)
 
 
@@ -517,9 +547,11 @@ class SQLAlchemyDao(Dao, ABC):
     def insert_status_update_reaction(self, status_update_reaction: StatusUpdateReaction):
         self._set_obj(status_update_reaction)
 
-    def read_status_update_reactions(self) -> List[StatusUpdateReaction]:
+    def read_status_update_reactions(self, company_uuid: str) -> List[StatusUpdateReaction]:
         with self._get_session() as session:
-            return session.query(StatusUpdateReaction).filter(StatusUpdateReaction.deleted == false()).all()
+            return session.query(StatusUpdateReaction).join(Company)\
+                .filter(and_(StatusUpdateReaction.deleted == false(),
+                             Company.uuid == company_uuid)).all()
 
 
 class SQLiteDao(SQLAlchemyDao):
@@ -559,10 +591,8 @@ else:
     raise TypeError(f"DAO {get_active_dao_type().name} is not supported")
 
 
-def create_initial_data():
-    company = Company("Test Company", "test_slack_id")
-
-    for department_name, team_names in TEAM_NAMES.items():
+def create_initial_data(company: Company):
+    for department_name, team_names in INITIAL_TEAM_NAMES.items():
         departments = dao.read_departments(department_name)
         if departments:
             department = departments[0]
@@ -578,13 +608,13 @@ def create_initial_data():
                 team = Team(team_name, department)
                 dao.insert_team(team)
 
-    existing_project_names = [p.name for p in dao.read_projects()]
-    for project_name in set(PROJECT_NAMES):
+    existing_project_names = [p.name for p in dao.read_projects(company_uuid=company.uuid)]
+    for project_name in set(INITIAL_PROJECT_NAMES):
         if project_name not in existing_project_names:
             dao.insert_project(Project(project_name, company=company))
 
-    existing_status_update_types = dao.read_status_update_types()
-    for name, emoji in STATUS_UPDATE_TYPES:
+    existing_status_update_types = dao.read_status_update_types(company_uuid=company.uuid)
+    for name, emoji in INITIAL_STATUS_UPDATE_TYPES:
         for status_update_type_ in existing_status_update_types:
             if status_update_type_.name == name and status_update_type_.emoji == emoji:
                 break
@@ -593,8 +623,8 @@ def create_initial_data():
             dao.insert_status_update_type(new_status_update_type)
             existing_status_update_types.append(new_status_update_type)
 
-    existing_initial_reactions = dao.read_status_update_reactions()
-    for name, emoji in REACTIONS:
+    existing_initial_reactions = dao.read_status_update_reactions(company_uuid=company.uuid)
+    for name, emoji in INITIAL_REACTIONS:
         for existing_initial_reaction in existing_initial_reactions:
             if existing_initial_reaction.name == name and existing_initial_reaction.emoji == emoji:
                 break
@@ -602,6 +632,3 @@ def create_initial_data():
             new_status_update_reaction = StatusUpdateReaction(emoji, name, company=company)
             dao.insert_status_update_reaction(new_status_update_reaction)
             existing_initial_reactions.append(new_status_update_reaction)
-
-
-# create_initial_data()

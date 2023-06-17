@@ -41,11 +41,11 @@ def get_active_dao_type(default=DaoType.POSTGRES) -> DaoType:
         return default
 
 
-TEAM_NAMES = {
+INITIAL_TEAM_NAMES = {
     "R&D": [
         "Mobile",
         "Backend",
-        "Data Lake"
+        "Data"
     ],
     "Research": [
         "Applied Science",
@@ -62,14 +62,13 @@ TEAM_NAMES = {
 }
 
 
-PROJECT_NAMES = [
+INITIAL_PROJECT_NAMES = [
     "Alpha Project",
-    "SDK Release",
-    "ML Pipeline v2",
+    "Beta Project"
 ]
 
 
-STATUS_UPDATE_TYPES = [
+INITIAL_STATUS_UPDATE_TYPES = [
     ("Good news", "🙂"),
     ("Bad news", "🙃"),
     ("Risk", "⚠️"),
@@ -80,7 +79,7 @@ STATUS_UPDATE_TYPES = [
     ("RFC", "📄"),
 ]
 
-REACTIONS = [
+INITIAL_REACTIONS = [
     ("Like", "👍"),
     ("Congrats", "🥳"),
     ("You rock!", "🚀"),
