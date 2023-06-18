@@ -5,6 +5,7 @@ from slack_sdk.models.blocks import SectionBlock, StaticMultiSelectElement, Opti
     ContextBlock, MarkdownTextObject, PlainTextObject, OverflowMenuElement
 
 from updateme.core.model import StatusUpdateType, Team, Project, StatusUpdate, StatusUpdateReaction, Department
+from updateme.core.utils import encode_link_in_slack_message
 from updateme.slackbot.utils import es, teams_selector_option_groups, join_names_with_commas
 
 
@@ -162,10 +163,11 @@ def status_update_projects_block(status_update_projects: List[Project],
     def project_as_option(project: Project) -> Option:
         return Option(value=project.uuid, text=project.name)
 
+    initial_options = None
     if selected_options is not None:
         project_uuids = [project.uuid for project in status_update_projects]
-        selected_options = [project_as_option(project) for project in selected_options
-                            if project_uuids in project_uuids and not project.deleted]
+        initial_options = [project_as_option(project) for project in selected_options
+                            if project.uuid in project_uuids and not project.deleted]
 
     return SectionBlock(
         block_id=block_id,
@@ -177,7 +179,7 @@ def status_update_projects_block(status_update_projects: List[Project],
                 project_as_option(project)
                 for project in sorted(status_update_projects, key=lambda project: project.name) if not project.deleted
             ],
-            initial_options=selected_options,
+            initial_options=initial_options,
             focus_on_load=False
         )
     )
@@ -234,6 +236,9 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
         title += status_update.type.emoji + f" *{status_update.type.name}*"
     if status_update.projects:
         title += " @ " + ", ".join(project.name for project in status_update.projects)
+    title = es(title)
+    if status_update.discuss_link:
+        title += f" (<{encode_link_in_slack_message(status_update.discuss_link)}|discuss>)"
 
     text = " • "
     text += status_update.text
@@ -251,7 +256,7 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
         result.append(SectionBlock(
             text=TextObject(
                 type="mrkdwn",
-                text=es(title),
+                text=title,
                 # emoji=True
             )
         ))

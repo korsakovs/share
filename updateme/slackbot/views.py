@@ -68,7 +68,7 @@ def retrieve_status_update_from_view(body) -> StatusUpdate:
     selected_type = values[STATUS_UPDATE_TYPE_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID][
         "selected_option"]
     if selected_type is not None:
-        selected_type = dao.read_status_update_type(selected_type["value"])
+        selected_type = dao.read_status_update_type(company_uuid=company_uuid, uuid=selected_type["value"])
 
     teams = []
     selected_teams = values[STATUS_UPDATE_TEAMS_BLOCK][STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID][

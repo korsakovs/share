@@ -85,7 +85,11 @@ def home_page_open_handler(client: WebClient, event, logger):
     user_preferences = get_or_create_slack_user_preferences(user_id)
     user_info = get_user_info(user_id)
     is_admin = user_info and (user_info.is_admin or user_info.is_owner)
-    company_uuid = get_or_create_company_by_event(event).uuid
+    company = get_or_create_company_by_event(event)
+    if not company:
+        # The "Message" tab is opened
+        return
+    company_uuid = company.uuid
 
     kwargs = {}
     if user_preferences.active_project_filter:
@@ -1125,6 +1129,7 @@ def status_update_preview_share_button_click_handler(ack, body, logger):
 
 @app.event("message")
 def message_event_handler(body, logger):
+    company = get_or_create_company_by_body(body)
     status_update = status_update_from_message(body)
     user_info = get_user_info(status_update.author_slack_user_id)
     if user_info:
@@ -1142,7 +1147,12 @@ def message_event_handler(body, logger):
         metadata=Metadata(event_type="my_type", event_payload={"status_update_uuid": status_update.uuid}),
         text=prefix + status_update.text,  # This text will be displayed in notifications
         channel=body["event"]["channel"],
-        blocks=status_update_preview_message(status_update),
+        blocks=status_update_preview_message(
+            status_update=status_update,
+            projects=dao.read_projects(company_uuid=company.uuid),
+            teams=dao.read_teams(company_uuid=company.uuid),
+            status_update_types=dao.read_status_update_types(company_uuid=company.uuid)
+        ),
         unfurl_links=False
     )
     # TODO: Delete original message (if possible) !! OR !! Update status update preview on original message update
@@ -1155,14 +1165,9 @@ def status_update_message_preview_team_select_handler(ack, body, logger):
     ack()
     logger.info(body)
     status_update_uuid = body["message"]["metadata"]["event_payload"]["status_update_uuid"]
-    slack_team_id = body["team"]["id"]
-    company_uuid = get_or_create_company_by_body(body).uuid
+    company = get_or_create_company_by_body(body)
 
-    try:
-        company = dao.read_companies(slack_team_id=slack_team_id)[0]
-    except IndexError:
-        raise IndexError(f"Can not find a company with team_id = {slack_team_id}") from None
-    status_update = dao.read_status_update(status_update_uuid)
+    status_update = dao.read_status_update(company_uuid=company.uuid, uuid=status_update_uuid)
     if status_update is None:
         status_update = StatusUpdate(
             source=StatusUpdateSource.SLACK_MESSAGE,
@@ -1170,15 +1175,16 @@ def status_update_message_preview_team_select_handler(ack, body, logger):
             published=False,
             company=company
         )
-    status_update.teams = [dao.read_team(company_uuid=company_uuid, uuid=team["value"])
+    status_update.teams = [dao.read_team(company_uuid=company.uuid, uuid=team["value"])
                            for team in body["state"]["values"][
         "status_update_preview_teams_list"]["status_update_message_preview_team_selected"]["selected_options"]]
-    status_update.projects = [dao.read_project(project["value"]) for project in body["state"]["values"][
+    status_update.projects = [dao.read_project(company_uuid=company.uuid, uuid=project["value"])
+                              for project in body["state"]["values"][
         "status_update_preview_projects_list"]["status_update_message_preview_project_selected"]["selected_options"]]
     try:
         status_update_type_uuid = body["state"]["values"]["status_update_preview_status_update_type"][
             "status_update_message_preview_status_update_type_selected"]["selected_option"]["value"]
-        status_update.type = dao.read_status_update_type(company_uuid=company_uuid, uuid=status_update_type_uuid)
+        status_update.type = dao.read_status_update_type(company_uuid=company.uuid, uuid=status_update_type_uuid)
     except TypeError:
         status_update.type = None
     dao.insert_status_update(status_update)
@@ -1193,7 +1199,12 @@ def status_update_message_preview_team_select_handler(ack, body, logger):
         channel=body["channel"]["id"],
         ts=body["message"]["ts"],
         text=prefix + status_update.text,
-        blocks=status_update_preview_message(status_update)
+        blocks=status_update_preview_message(
+            status_update=status_update,
+            status_update_types=dao.read_status_update_types(company_uuid=company.uuid),
+            teams=dao.read_teams(company_uuid=company.uuid),
+            projects=dao.read_projects(company_uuid=company.uuid)
+        )
     )
 
 
@@ -1209,8 +1220,9 @@ def status_update_message_preview_status_update_type_select_handler(ack, body, l
 
 @app.action("status_update_message_preview_publish_button_clicked")
 def status_update_message_preview_publish_button_click_handler(ack, body, logger):
+    company = get_or_create_company_by_body(body)
     status_update_uuid = body["message"]["metadata"]["event_payload"]["status_update_uuid"]
-    status_update = dao.read_status_update(status_update_uuid)
+    status_update = dao.read_status_update(company_uuid=company.uuid, uuid=status_update_uuid)
     status_update.published = True
     try:
         discuss_link = body["state"]["values"]["status_update_preview_discuss_link"][
@@ -1224,8 +1236,9 @@ def status_update_message_preview_publish_button_click_handler(ack, body, logger
 
 @app.action("status_update_message_preview_cancel_button_clicked")
 def status_update_message_preview_cancel_button_click_handler(ack, body, logger):
+    company = get_or_create_company_by_body(body)
     status_update_uuid = body["message"]["metadata"]["event_payload"]["status_update_uuid"]
-    status_update = dao.read_status_update(status_update_uuid)
+    status_update = dao.read_status_update(company_uuid=company.uuid, uuid=status_update_uuid)
     status_update.deleted = True
     dao.insert_status_update(status_update)
     status_update_message_preview_team_select_handler(ack, body, logger)

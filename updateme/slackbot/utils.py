@@ -1,6 +1,6 @@
 import itertools
 from threading import Lock
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 from slack_sdk.models.blocks import OptionGroup, Option
 
@@ -39,7 +39,11 @@ def get_or_create_slack_user_preferences(user_id: str) -> SlackUserPreferences:
 
 
 def get_or_create_company_by_body(body) -> Company:
-    companies = dao.read_companies(slack_team_id=body["team"]["id"])
+    try:
+        slack_team_id = body["team"]["id"]
+    except KeyError:
+        slack_team_id = body["team_id"]
+    companies = dao.read_companies(slack_team_id=slack_team_id)
     try:
         return companies[0]
     except IndexError:
@@ -57,8 +61,12 @@ def get_or_create_company_by_body(body) -> Company:
                 return company
 
 
-def get_or_create_company_by_event(event) -> Company:
-    companies = dao.read_companies(slack_team_id=event["view"]["team_id"])
+def get_or_create_company_by_event(event) -> Optional[Company]:
+    try:
+        companies = dao.read_companies(slack_team_id=event["view"]["team_id"])
+    except KeyError:
+        return None
+
     try:
         return companies[0]
     except IndexError:
