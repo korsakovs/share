@@ -155,6 +155,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("slack_team_id", String(256), nullable=False, unique=True, index=True),
+            Column("name", String(256), nullable=False),
         )
 
         self._departments_table = Table(
@@ -199,6 +200,7 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
+            Column("emoji", String(256), nullable=False),
             Column("name", String(256), nullable=False),
             Column("deleted", Boolean, nullable=False),
         )
@@ -209,7 +211,7 @@ class SQLAlchemyDao(Dao, ABC):
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
             Column("source", Enum(StatusUpdateSource), nullable=False),
-            Column("discuss_link", String(1024), nullable=True),
+            Column("link", String(1024), nullable=True),
             Column("published", Boolean, nullable=False),
             Column("deleted", Boolean, nullable=False),
             Column("text", Text, nullable=False),

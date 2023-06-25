@@ -9,6 +9,7 @@ from typing import List, Optional
 class StatusUpdateSource(Enum):
     SLACK_DIALOG = 1
     SLACK_MESSAGE = 2
+    SLACK_REAL_USER_MESSAGE = 3
 
 
 @dataclass
@@ -83,7 +84,7 @@ class StatusUpdate:
     company: Company
 
     type: Optional[StatusUpdateType] = None
-    discuss_link: Optional[str] = None
+    link: Optional[str] = None
 
     published: bool = False
     deleted: bool = False

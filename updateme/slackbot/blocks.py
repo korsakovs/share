@@ -185,8 +185,8 @@ def status_update_projects_block(status_update_projects: List[Project],
     )
 
 
-def status_update_discuss_link_block(label: str = "Link to a discussion", initial_value: str = None,
-                                     block_id: str = None, action_id: str = None) -> InputBlock:
+def status_update_link_block(label: str = "Link", initial_value: str = None,
+                             block_id: str = None, action_id: str = None) -> InputBlock:
     return InputBlock(
         block_id=block_id,
         label=label,
@@ -237,8 +237,8 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
     if status_update.projects:
         title += " @ " + ", ".join(project.name for project in status_update.projects)
     title = es(title)
-    if status_update.discuss_link:
-        title += f" (<{encode_link_in_slack_message(status_update.discuss_link)}|discuss>)"
+    if status_update.link:
+        title += f" (<{encode_link_in_slack_message(status_update.link)}|link>)"
 
     text = " • "
     text += status_update.text

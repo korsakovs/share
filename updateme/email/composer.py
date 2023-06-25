@@ -79,10 +79,10 @@ def status_update_as_html(status_update: StatusUpdate) -> str:
 """
 
     # TODO: Introduce real links and remove this test link
-    discuss_link_block = ""
-    if status_update.discuss_link:
-        link = status_update.discuss_link.replace('"', "%22")
-        discuss_link_block = f"""
+    link_block = ""
+    if status_update.link:
+        link = status_update.link.replace('"', "%22")
+        link_block = f"""
         <div style="margin:0px;padding:0px;">
             <a href="{link}" style="text-decoration: none;">Discuss...</a>
         </div>"""
@@ -98,7 +98,7 @@ def status_update_as_html(status_update: StatusUpdate) -> str:
                     </div>
                 </td>
                 <td style="align:right;text-align:right;">
-                    {discuss_link_block}
+                    {link_block}
                 </td>
             </tr>
         </table>

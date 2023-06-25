@@ -13,9 +13,11 @@ from updateme.core import dao
 from updateme.core.config import slack_bot_token, slack_app_token, get_env, Env
 from updateme.core.model import StatusUpdateSource, StatusUpdate, SlackUserInfo, Department, Team, Project, \
     StatusUpdateType
+from updateme.core.utils import generate_slack_message_url, \
+    slack_channel_id_thread_ts_message_ts_from_status_update_link, encode_link_in_slack_message
 from updateme.slackbot.messages import status_update_preview_message, status_update_from_message
 from updateme.slackbot.utils import get_or_create_slack_user_preferences, get_or_create_company_by_event, \
-    get_or_create_company_by_body
+    get_or_create_company_by_body, es
 from updateme.slackbot.views import status_update_dialog_view, retrieve_status_update_from_view, \
     share_status_update_preview_view, STATUS_UPDATE_MODAL_STATUS_UPDATE_TYPE_ACTION_ID, \
     STATUS_UPDATE_MODAL_STATUS_UPDATE_TEAMS_ACTION_ID, \
@@ -98,11 +100,11 @@ def home_page_open_handler(client: WebClient, event, logger):
         kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
     if user_preferences.active_department_filter:
         kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
-    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
+    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=20, **kwargs)
 
     if user_preferences.active_tab == "my_updates":
         view = home_page_my_updates_view(
-            status_updates=dao.read_status_updates(company_uuid=company_uuid, author_slack_user_id=user_id, last_n=100),
+            status_updates=dao.read_status_updates(company_uuid=company_uuid, author_slack_user_id=user_id, last_n=20),
             status_update_reactions=dao.read_status_update_reactions(company_uuid),
             is_admin=is_admin,
             current_user_slack_id=user_id
@@ -150,7 +152,7 @@ def home_page_my_updates_button_click_handler(ack, body, logger):
             user_id=user_id,
             view=home_page_my_updates_view(
                 status_updates=dao.read_status_updates(company_uuid=company_uuid, author_slack_user_id=user_id,
-                                                       last_n=100),
+                                                       last_n=20),
                 status_update_reactions=dao.read_status_update_reactions(company_uuid),
                 is_admin=is_admin,
                 current_user_slack_id=user_id
@@ -158,6 +160,35 @@ def home_page_my_updates_button_click_handler(ack, body, logger):
         )
     except Exception as e:
         logger.error(f"Error publishing home tab: {e}")
+
+
+@app.shortcut("share_message_button_clicked_callback")
+def share_message_button_clicked_callback_handler(ack, body, logger):
+    ack()
+    logger.info(body)
+    company = get_or_create_company_by_body(body)
+    thread_ts = body["message"]["thread_ts"]
+    if thread_ts == body["message_ts"]:
+        thread_ts = None
+    app.client.views_open(
+        trigger_id=body["trigger_id"],
+        view=status_update_dialog_view(
+            state=StatusUpdate(
+                company=company,
+                source=StatusUpdateSource.SLACK_REAL_USER_MESSAGE,
+                text="",
+                link=generate_slack_message_url(
+                    domain=body["team"]["domain"],
+                    message_ts=body["message_ts"],
+                    channel_id=body["channel"]["id"],
+                    thread_ts=thread_ts
+                )
+            ),
+            projects=dao.read_projects(company.uuid),
+            teams=dao.read_teams(company.uuid),
+            status_update_types=dao.read_status_update_types(company.uuid)
+        )
+    )
 
 
 @app.action("my_updates_status_message_menu_button_clicked")
@@ -226,7 +257,7 @@ def home_page_my_updates_delete_status_update_dialog_submitted_handler(ack, body
             user_id=body["user"]["id"],
             view=home_page_my_updates_view(
                 status_updates=dao.read_status_updates(company_uuid=company_uuid, author_slack_user_id=user_id,
-                                                       last_n=100),
+                                                       last_n=20),
                 status_update_reactions=dao.read_status_update_reactions(company_uuid),
                 is_admin=is_admin,
                 current_user_slack_id=user_id
@@ -252,7 +283,7 @@ def home_page_company_updates_button_click_handler(ack, body, logger):
         kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
     if user_preferences.active_department_filter:
         kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
-    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
+    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=20, **kwargs)
 
     if user_preferences.active_tab == "company_updates":
         # Something is wrong in the home_page_status_update_filters function. Even if we pass Nulls
@@ -329,7 +360,7 @@ def company_updates_status_message_menu_button_clicked_handler(ack, body, logger
         pass
 
 @app.view("home_page_company_updates_delete_status_update_dialog_submitted")
-def handle_view_submission_events(ack, body, logger):
+def home_page_company_updates_delete_status_update_dialog_submitted_handler(ack, body, logger):
     ack()
     logger.info(body)
 
@@ -352,7 +383,7 @@ def handle_view_submission_events(ack, body, logger):
         kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
     if user_preferences.active_department_filter:
         kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
-    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
+    status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=20, **kwargs)
 
     try:
         app.client.views_publish(
@@ -743,7 +774,7 @@ def home_page_select_team_filter_change_handler(ack, body, logger):
             kwargs["from_teams"] = [user_preferences.active_team_filter.uuid]
         if user_preferences.active_department_filter:
             kwargs["from_departments"] = [user_preferences.active_department_filter.uuid]
-        status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=100, **kwargs)
+        status_updates = dao.read_status_updates(company_uuid=company_uuid, last_n=20, **kwargs)
 
         app.client.views_publish(
             user_id=user_id,
@@ -1048,7 +1079,7 @@ def status_update_preview_button_click_handler(ack, body, logger):
         existing_status_update.teams = status_update.teams
         existing_status_update.projects = status_update.projects
         existing_status_update.type = status_update.type
-        existing_status_update.discuss_link = status_update.discuss_link
+        existing_status_update.link = status_update.link
         existing_status_update.text = status_update.text
         dao.insert_status_update(existing_status_update)
         show_preview = False
@@ -1074,7 +1105,7 @@ def status_update_preview_button_click_handler(ack, body, logger):
                     status_updates=dao.read_status_updates(
                         company_uuid=company.uuid,
                         author_slack_user_id=status_update.author_slack_user_id,
-                        last_n=100
+                        last_n=20
                     ),
                     status_update_reactions=dao.read_status_update_reactions(company.uuid),
                     is_admin=is_admin,
@@ -1113,10 +1144,26 @@ def status_update_preview_back_to_editing_click_handler(ack, body, logger):
 def status_update_preview_share_button_click_handler(ack, body, logger):
     ack()
     company = get_or_create_company_by_body(body)
+    status_update_uuid = retrieve_private_metadata_from_view(body).status_update_uuid
     dao.publish_status_update(
         company_uuid=company.uuid,
         uuid=retrieve_private_metadata_from_view(body).status_update_uuid
     )
+    status_update = dao.read_status_update(company_uuid=company.uuid, uuid=status_update_uuid)
+    link = status_update.link
+    try:
+        channel_id, thread_ts, message_ts = slack_channel_id_thread_ts_message_ts_from_status_update_link(link)
+    except TypeError:
+        channel_id, thread_ts, message_ts = None, None, None
+    if channel_id and message_ts:
+        text = f"A status update with a link to this " \
+               f"<{encode_link_in_slack_message(link)}|{'reply' if thread_ts else 'message'}> " \
+               f"was shared by <@{status_update.author_slack_user_id}>"
+        app.client.chat_postMessage(
+            channel=channel_id,
+            text=text,
+            thread_ts=thread_ts or message_ts
+        )
 
 
 @app.event("message")
@@ -1217,11 +1264,11 @@ def status_update_message_preview_publish_button_click_handler(ack, body, logger
     status_update = dao.read_status_update(company_uuid=company.uuid, uuid=status_update_uuid)
     status_update.published = True
     try:
-        discuss_link = body["state"]["values"]["status_update_preview_discuss_link"][
-            "status_update_message_preview_discuss_link_updated"]["value"]
+        link = body["state"]["values"]["status_update_preview_link"][
+            "status_update_message_preview_link_updated"]["value"]
     except (KeyError, TypeError):
-        discuss_link = None
-    status_update.discuss_link = discuss_link
+        link = None
+    status_update.link = link
     dao.insert_status_update(status_update)
     status_update_message_preview_team_select_handler(ack, body, logger)
 
