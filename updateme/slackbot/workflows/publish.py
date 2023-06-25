@@ -28,7 +28,7 @@ def publish_updates_wf_step_edit_handler(ack: Ack, step, configure: Configure):
             block_id="filters_block",
             label="Status update type(s) (optional)",
             element=StaticMultiSelectElement(
-                options=[Option(label=t.emoji + " " + t.name, value=t.uuid) for t in dao.read_status_update_types()]
+                options=[Option(label=t.name, value=t.uuid) for t in dao.read_status_update_types()]
             )
         ).to_dict(),
         InputBlock(

@@ -93,7 +93,7 @@ def status_update_as_html(status_update: StatusUpdate) -> str:
             <tr>
                 <td>
                     <div style="padding:5px">
-                    {"" if not type_ else type_.emoji + f" <b>{hsc(type_.name)}</b> "}
+                    {"" if not type_ else f" <b>{hsc(type_.name)}</b> "}
                     {"" if not projects else f"@ {projects_str}"}
                     </div>
                 </td>

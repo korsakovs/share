@@ -525,7 +525,7 @@ def home_page_configuration_status_types_view(status_types: List[StatusUpdateTyp
     for status_type in sorted(status_types, key=lambda p: str(p.name).lower()):
         status_types_blocks.append(
             SectionBlock(
-                text=status_type.emoji + " " + status_type.name,
+                text=status_type.name,
                 accessory=OverflowMenuElement(action_id="configuration_status_type_menu_clicked", options=[
                     Option(value="edit_" + status_type.uuid, text="Edit..."),
                     Option(value="delete_" + status_type.uuid, text="Delete..."),
@@ -554,7 +554,6 @@ def home_page_configuration_status_types_view(status_types: List[StatusUpdateTyp
 
 
 def home_page_configuration_add_new_status_update_type_view(status_update_type_name: str = None,
-                                                            status_update_type_emoji: str = None,
                                                             status_update_type_uuid: str = None):
     return View(
         type="modal",
@@ -564,18 +563,6 @@ def home_page_configuration_add_new_status_update_type_view(status_update_type_n
         close="Cancel",
         private_metadata=status_update_type_uuid,
         blocks=[
-            InputBlock(
-                block_id="home_page_configuration_new_status_update_type_dialog_emoji_input_block",
-                label="Status update emoji",
-                optional=False,
-                element=PlainTextInputElement(
-                    action_id="home_page_configuration_new_status_update_type_dialog_emoji_input_action",
-                    placeholder="Status update emoji",
-                    max_length=64,
-                    focus_on_load=False,
-                    initial_value=status_update_type_emoji
-                )
-            ),
             InputBlock(
                 block_id="home_page_configuration_new_status_update_type_dialog_name_input_block",
                 label="Status update name",
@@ -592,8 +579,7 @@ def home_page_configuration_add_new_status_update_type_view(status_update_type_n
     )
 
 
-def home_page_configuration_delete_status_update_type_view(status_update_type_name: str, status_update_type_emoji: str,
-                                                           status_update_type_uuid: str):
+def home_page_configuration_delete_status_update_type_view(status_update_type_name: str, status_update_type_uuid: str):
     return View(
         type="modal",
         callback_id="home_page_configuration_delete_status_update_type_dialog_submitted",
@@ -604,7 +590,7 @@ def home_page_configuration_delete_status_update_type_view(status_update_type_na
         blocks=[
             SectionBlock(
                 text="Are you sure you want to delete status update type "
-                     + es(status_update_type_emoji + " " + status_update_type_name) + "?"
+                     + es(status_update_type_name) + "?"
             ),
         ]
     )

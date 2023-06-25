@@ -919,7 +919,6 @@ def configuration_status_type_menu_clicked_handler(ack, body, logger):
                     trigger_id=body["trigger_id"],
                     view=home_page_configuration_add_new_status_update_type_view(
                         status_update_type_name=status_update_type.name,
-                        status_update_type_emoji=status_update_type.emoji,
                         status_update_type_uuid=status_update_type.uuid
                     )
                 )
@@ -935,7 +934,6 @@ def configuration_status_type_menu_clicked_handler(ack, body, logger):
                 trigger_id=body["trigger_id"],
                 view=home_page_configuration_delete_status_update_type_view(
                     status_update_type_name=status_update_type.name,
-                    status_update_type_emoji=status_update_type.emoji,
                     status_update_type_uuid=status_update_type.uuid
                 )
             )
@@ -947,10 +945,6 @@ def configuration_status_type_menu_clicked_handler(ack, body, logger):
 def home_page_configuration_new_status_update_type_dialog_submitted_handler(ack, body, logger):
     ack()
     logger.info(body)
-
-    status_update_type_emoji = str(body["view"]["state"]["values"][
-                           "home_page_configuration_new_status_update_type_dialog_emoji_input_block"][
-                           "home_page_configuration_new_status_update_type_dialog_emoji_input_action"]["value"]).strip()
 
     status_update_type_name = str(body["view"]["state"]["values"][
                            "home_page_configuration_new_status_update_type_dialog_name_input_block"][
@@ -974,13 +968,11 @@ def home_page_configuration_new_status_update_type_dialog_submitted_handler(ack,
             if status_update_types and status_update_types[0].uuid != status_update_type_uuid:
                 logger.error("Status update type with such name already exist")
             else:
-                status_update_type.emoji = status_update_type_emoji
                 status_update_type.name = status_update_type_name
                 status_update_type.deleted = False
     else:
         if not dao.read_status_update_types(company_uuid=company.uuid, name=status_update_type_name) :
-            dao.insert_status_update_type(StatusUpdateType(company=company, name=status_update_type_name,
-                                                           emoji=status_update_type_emoji))
+            dao.insert_status_update_type(StatusUpdateType(company=company, name=status_update_type_name))
 
     user_id = body["user"]["id"]
     try:

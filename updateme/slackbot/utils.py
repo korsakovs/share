@@ -75,7 +75,7 @@ def get_or_create_company_by_event(event) -> Optional[Company]:
                 return dao.read_companies(slack_team_id=event["view"]["team_id"])[0]
             except IndexError:
                 company = Company(slack_team_id=event["view"]["team_id"], name="")
-                dao.insert_company(Company(slack_team_id=event["view"]["team_id"], name=""))
+                # dao.insert_company(Company(slack_team_id=event["view"]["team_id"], name=""))
                 create_initial_data(company)
                 return company
 

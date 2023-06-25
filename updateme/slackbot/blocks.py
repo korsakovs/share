@@ -108,7 +108,7 @@ def status_update_type_block(status_update_types: List[StatusUpdateType],
                              selected_value: StatusUpdateType = None, block_id: str = None,
                              action_id: str = None) -> SectionBlock:
     def type_as_option(status_update_type: StatusUpdateType) -> Option:
-        return Option(value=status_update_type.uuid, text=f"{status_update_type.emoji} {status_update_type.name}")
+        return Option(value=status_update_type.uuid, text=status_update_type.name)
 
     initial_option = None
     if selected_value and not selected_value.deleted:
@@ -233,7 +233,7 @@ def status_update_blocks(status_update: StatusUpdate, status_update_reactions: L
     result = []
     title = ""
     if status_update.type:
-        title += status_update.type.emoji + f" *{status_update.type.name}*"
+        title += f" *{status_update.type.name}*"
     if status_update.projects:
         title += " @ " + ", ".join(project.name for project in status_update.projects)
     title = es(title)

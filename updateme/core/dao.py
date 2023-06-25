@@ -191,7 +191,6 @@ class SQLAlchemyDao(Dao, ABC):
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("name", String(256), nullable=False),
             Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
-            Column("emoji", String(256)),
             Column("deleted", Boolean, nullable=False),
         )
 
@@ -200,7 +199,6 @@ class SQLAlchemyDao(Dao, ABC):
             self._metadata_obj,
             Column("uuid", String(256), primary_key=True, nullable=False),
             Column("company_uuid", String(256), ForeignKey(f"{self._COMPANIES_TABLE}.uuid"), nullable=False),
-            Column("emoji", String(256), nullable=False),
             Column("name", String(256), nullable=False),
             Column("deleted", Boolean, nullable=False),
         )
@@ -614,12 +612,12 @@ def create_initial_data(company: Company):
             dao.insert_project(Project(project_name, company=company))
 
     existing_status_update_types = dao.read_status_update_types(company_uuid=company.uuid)
-    for name, emoji in INITIAL_STATUS_UPDATE_TYPES:
+    for name in INITIAL_STATUS_UPDATE_TYPES:
         for status_update_type_ in existing_status_update_types:
-            if status_update_type_.name == name and status_update_type_.emoji == emoji:
+            if status_update_type_.name == name:
                 break
         else:
-            new_status_update_type = StatusUpdateType(name, emoji, company=company)
+            new_status_update_type = StatusUpdateType(name=name, company=company)
             dao.insert_status_update_type(new_status_update_type)
             existing_status_update_types.append(new_status_update_type)
 

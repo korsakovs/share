@@ -69,14 +69,14 @@ INITIAL_PROJECT_NAMES = [
 
 
 INITIAL_STATUS_UPDATE_TYPES = [
-    ("Good news", "🙂"),
-    ("Bad news", "🙃"),
-    ("Risk", "⚠️"),
-    ("Delay", "⏳️"),
-    ("Announce", "📢"),
-    ("Release", "🎉"),
-    ("Launch", "🚀"),
-    ("RFC", "📄"),
+    "🙂 Good news",
+    "🙃 Bad news",
+    "⚠️ Risk",
+    "⏳️ Delay",
+    "📢 Announce",
+    "🎉 Release",
+    "🚀 Launch",
+    "📄 RFC",
 ]
 
 INITIAL_REACTIONS = [

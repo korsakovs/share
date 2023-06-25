@@ -15,7 +15,7 @@ def email_updates_wf_step_edit_handler(ack: Ack, step, configure: Configure):
     except (KeyError, TypeError):
         initial_email = None
 
-    status_update_types_options = [Option(label=t.emoji + " " + t.name, value=t.uuid)
+    status_update_types_options = [Option(label=t.name, value=t.uuid)
                                    for t in dao.read_status_update_types()]
     try:
         initial_status_update_types_uuids = step["inputs"]["status_update_types_uuids"]["value"]
