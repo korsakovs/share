@@ -167,8 +167,11 @@ def share_message_button_clicked_callback_handler(ack, body, logger):
     ack()
     logger.info(body)
     company = get_or_create_company_by_body(body)
-    thread_ts = body["message"]["thread_ts"]
-    if thread_ts == body["message_ts"]:
+    try:
+        thread_ts = body["message"]["thread_ts"]
+        if thread_ts == body["message_ts"]:
+            thread_ts = None
+    except KeyError:
         thread_ts = None
     app.client.views_open(
         trigger_id=body["trigger_id"],
